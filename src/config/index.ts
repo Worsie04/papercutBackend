@@ -17,7 +17,7 @@ export const config = {
   
   // JWT
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
+    secret: process.env.JWT_SECRET || 'your-secret-key1',
     expiresIn: process.env.JWT_EXPIRES_IN || '1d',
   },
   
