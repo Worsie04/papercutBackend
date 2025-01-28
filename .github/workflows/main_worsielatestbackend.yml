@@ -69,6 +69,6 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'worsieLatestBackend'
-          slot-name: 'Production'
+          slot-name: 'development'
           package: .
           
