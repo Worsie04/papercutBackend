@@ -12,6 +12,16 @@ module.exports = {
       timestamps: true,
       underscored: true,
     },
+    pool: {
+      max: 20,
+      min: 0,
+      idle: 10000,
+      acquire: 30000,
+    },
+    dialectOptions: {
+      statement_timeout: 10000,
+      idle_in_transaction_session_timeout: 10000,
+    },
   },
   test: {
     username: process.env.DB_USER || 'postgres',
@@ -23,6 +33,12 @@ module.exports = {
     define: {
       timestamps: true,
       underscored: true,
+    },
+    pool: {
+      max: 20,
+      min: 0,
+      idle: 10000,
+      acquire: 30000,
     },
   },
   production: {
@@ -36,11 +52,19 @@ module.exports = {
       timestamps: true,
       underscored: true,
     },
+    pool: {
+      max: 20,
+      min: 0,
+      idle: 10000,
+      acquire: 30000,
+    },
     dialectOptions: {
       ssl: {
         require: true,
         rejectUnauthorized: false,
       },
+      statement_timeout: 10000,
+      idle_in_transaction_session_timeout: 10000,
     },
   },
 }; 
