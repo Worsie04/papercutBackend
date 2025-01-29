@@ -16,7 +16,11 @@ export class AuthController {
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
       });
       
-      res.json(result);
+      // res.json(result);
+      res.json({
+        ...result,
+        token: result.accessToken
+      });
     } catch (error) {
       next(error);
     }
