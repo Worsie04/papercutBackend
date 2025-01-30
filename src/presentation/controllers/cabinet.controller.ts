@@ -61,4 +61,37 @@ export class CabinetController {
       next(error);
     }
   }
+
+  static async approveCabinet(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new AppError(401, 'User not authenticated');
+      }
+
+      const cabinet = await CabinetService.approveCabinet(id, userId);
+      res.json(cabinet);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async rejectCabinet(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      const { reason } = req.body;
+      
+      if (!userId) {
+        throw new AppError(401, 'User not authenticated');
+      }
+
+      const cabinet = await CabinetService.rejectCabinet(id, userId, reason);
+      res.json(cabinet);
+    } catch (error) {
+      next(error);
+    }
+  }
 } 

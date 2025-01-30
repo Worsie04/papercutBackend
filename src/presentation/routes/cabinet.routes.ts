@@ -11,5 +11,7 @@ router.post('/', CabinetController.createCabinet);
 router.get('/approved', CabinetController.getApprovedCabinets);
 router.get('/', CabinetController.getCabinets);
 router.get('/:id', CabinetController.getCabinet);
+router.post('/:id/approve', CabinetController.approveCabinet);
+router.post('/:id/reject', CabinetController.rejectCabinet);
 
 export default router; 

@@ -18,13 +18,19 @@ setupAssociations();
 // Security middleware
 app.use(helmet());
 
-// CORS konfiqurasiya
-// config.corsOrigins -> process.env.CORS_ORIGINS?.split(',') vasitəsilə siyahı oxunur
 app.use(cors({
-  origin: config.corsOrigins, // ['https://worsie.vercel.app', 'http://localhost:3000'] əvəzinə
+  origin: config.corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'X-Requested-With',
+    'Content-Length',
+    'Accept-Encoding',
+    'X-CSRF-Token'
+  ]
 }));
 
 // Cookie parser middleware
@@ -44,14 +50,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: config.nodeEnv === 'production', // HTTPS istifadə olunursa true qalır
+    secure: config.nodeEnv === 'production',
     httpOnly: true,
     maxAge: config.session.maxAge,
     sameSite: 'none', 
-    /*
-      Cross-site mühitdə cookie ötürmək üçün sameSite: 'none' lazımdır.
-      Əgər strictly “same-site” istəyirsinizsə, bunu dəyişə bilərsiniz.
-    */
   }
 }));
 
@@ -70,13 +72,5 @@ app.use(errorLogger);
 
 // Error handling
 app.use(errorHandler);
-
-// // 404 handler (isteyirsinizsə, uncomment edin)
-// // app.use((req, res) => {
-// //   res.status(404).json({
-// //     status: 'error',
-// //     message: 'Route not found'
-// //   });
-// // });
 
 export { app };

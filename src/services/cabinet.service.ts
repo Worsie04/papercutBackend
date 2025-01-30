@@ -4,6 +4,7 @@ import { User } from '../models/user.model';
 import { Space } from '../models/space.model';
 import { QueryTypes } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
+import { Transaction } from 'sequelize';
 
 interface CreateCabinetParams {
   name: string;
@@ -132,36 +133,58 @@ export class CabinetService {
     }
   }
 
-  static async approveCabinet(cabinetId: string) {
-    try {
-      const cabinet = await Cabinet.findByPk(cabinetId);
-      if (!cabinet) {
-        throw new Error('Cabinet not found');
-      }
-
-      await cabinet.update({ status: 'approved' });
-      return cabinet;
-    } catch (error) {
-      console.error('Error approving cabinet:', error);
-      throw error;
+  static async approveCabinet(id: string, userId: string) {
+    const cabinet = await Cabinet.findByPk(id);
+    
+    if (!cabinet) {
+      throw new AppError(404, 'Cabinet not found');
     }
+
+    // Check if user is an approver
+    if (!cabinet.approvers.some(approver => approver.userId === userId)) {
+      throw new AppError(403, 'User is not authorized to approve this cabinet');
+    }
+
+    // Check if cabinet is already approved
+    if (cabinet.status === 'approved') {
+      throw new AppError(400, 'Cabinet is already approved');
+    }
+
+    // Update cabinet status
+    await cabinet.update({
+      status: 'approved',
+      approvedBy: userId,
+      approvedAt: new Date()
+    });
+
+    return cabinet;
   }
 
-  static async rejectCabinet(cabinetId: string, reason: string) {
-    try {
-      const cabinet = await Cabinet.findByPk(cabinetId);
-      if (!cabinet) {
-        throw new Error('Cabinet not found');
-      }
-
-      await cabinet.update({ 
-        status: 'rejected',
-        rejectionReason: reason
-      });
-      return cabinet;
-    } catch (error) {
-      console.error('Error rejecting cabinet:', error);
-      throw error;
+  static async rejectCabinet(id: string, userId: string, reason: string) {
+    const cabinet = await Cabinet.findByPk(id);
+    
+    if (!cabinet) {
+      throw new AppError(404, 'Cabinet not found');
     }
+
+    // Check if user is an approver
+    if (!cabinet.approvers.some(approver => approver.userId === userId)) {
+      throw new AppError(403, 'User is not authorized to reject this cabinet');
+    }
+
+    // Check if cabinet is already approved or rejected
+    if (cabinet.status === 'approved' || cabinet.status === 'rejected') {
+      throw new AppError(400, `Cabinet is already ${cabinet.status}`);
+    }
+
+    // Update cabinet status
+    await cabinet.update({
+      status: 'rejected',
+      rejectedBy: userId,
+      rejectedAt: new Date(),
+      rejectionReason: reason
+    });
+
+    return cabinet;
   }
 } 

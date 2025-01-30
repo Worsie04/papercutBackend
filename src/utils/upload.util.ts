@@ -1,13 +1,10 @@
-import path from 'path';
-import fs from 'fs/promises';
+import { uploadFileToR2 } from './r2.util';
 
 export async function uploadFile(file: any, folder: string): Promise<string> {
-  const uploadDir = path.join(process.cwd(), '..', 'client', 'public', 'uploads', folder);
-  await fs.mkdir(uploadDir, { recursive: true });
-  
   const filename = `${Date.now()}-${file.originalname}`;
-  const filepath = path.join(uploadDir, filename);
   
-  await fs.writeFile(filepath, file.buffer);
-  return path.join('/uploads', folder, filename).replace(/\\/g, '/');
+  // Upload to R2 and get the public URL
+  const publicUrl = await uploadFileToR2(file.buffer, filename, folder);
+  
+  return publicUrl;
 } 
