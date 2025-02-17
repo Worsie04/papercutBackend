@@ -8,12 +8,24 @@ import { config } from './config';
 import { errorHandler } from './presentation/middlewares/errorHandler';
 import { requestLogger, errorLogger } from './presentation/middlewares/logger.middleware';
 import routes from './presentation/routes';
-import { setupAssociations } from './models/associations';
+import { initializeDatabase } from './infrastructure/database/sequelize';
 
 const app = express();
 
-// Setup database associations
-setupAssociations();
+// Initialize database and models before starting the server
+let isInitialized = false;
+
+export const initializeApp = async () => {
+  if (!isInitialized) {
+    try {
+      await initializeDatabase();
+      isInitialized = true;
+    } catch (error) {
+      console.error('Failed to initialize database:', error);
+      process.exit(1);
+    }
+  }
+};
 
 // Security middleware
 app.use(helmet());
@@ -21,7 +33,7 @@ app.use(helmet());
 app.use(cors({
   origin: config.corsOrigins,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
@@ -37,12 +49,12 @@ app.use(cors({
 app.use(cookieParser());
 
 // Global rate limiting
-const limiter = rateLimit({
-  windowMs: config.security.rateLimitWindowMs,
-  max: config.security.rateLimitMax,
-  message: 'Too many requests from this IP, please try again later'
-});
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: config.security.rateLimitWindowMs,
+//   max: config.security.rateLimitMax,
+//   message: 'Too many requests from this IP, please try again later'
+// });
+// app.use(limiter);
 
 // Session middleware
 app.use(session({

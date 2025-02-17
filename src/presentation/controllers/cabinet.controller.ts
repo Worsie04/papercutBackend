@@ -30,6 +30,7 @@ export class CabinetController {
     try {
       const { id } = req.params;
       const cabinet = await CabinetService.getCabinet(id);
+      console.log(cabinet)
       res.json(cabinet);
     } catch (error) {
       next(error);
@@ -90,6 +91,77 @@ export class CabinetController {
 
       const cabinet = await CabinetService.rejectCabinet(id, userId, reason);
       res.json(cabinet);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async assignCabinetsToUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userIds, cabinetIds, spaceId } = req.body;
+
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        throw new AppError(400, 'At least one user ID is required');
+      }
+
+      if (!Array.isArray(cabinetIds) || cabinetIds.length === 0) {
+        throw new AppError(400, 'At least one cabinet ID is required');
+      }
+
+      if (!spaceId) {
+        throw new AppError(400, 'Space ID is required');
+      }
+
+      await CabinetService.assignCabinetsToUsers(userIds, cabinetIds, spaceId);
+
+      res.status(200).json({
+        message: 'Cabinets assigned successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async assignUsersWithPermissions(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { assignments, spaceId } = req.body;
+
+      if (!assignments || !Array.isArray(assignments) || assignments.length === 0) {
+        throw new AppError(400, 'Invalid assignments data');
+      }
+
+      if (!spaceId) {
+        throw new AppError(400, 'Space ID is required');
+      }
+
+      // Validate each assignment
+      assignments.forEach(assignment => {
+        if (!assignment.userId || !assignment.cabinetId || !assignment.role || !assignment.permissions) {
+          throw new AppError(400, 'Invalid assignment data');
+        }
+
+        const requiredPermissions = [
+          'readRecords',
+          'createRecords',
+          'updateRecords',
+          'deleteRecords',
+          'manageCabinet',
+          'downloadFiles',
+          'exportTables'
+        ];
+
+        requiredPermissions.forEach(perm => {
+          if (typeof assignment.permissions[perm] !== 'boolean') {
+            throw new AppError(400, `Invalid permission value for ${perm}`);
+          }
+        });
+      });
+
+      await CabinetService.assignUsersWithPermissions(assignments, spaceId);
+
+      res.status(200).json({
+        message: 'Users assigned to cabinets with permissions successfully'
+      });
     } catch (error) {
       next(error);
     }

@@ -4,6 +4,11 @@ import { Role } from '../models/role.model';
 import { AppError } from '../presentation/middlewares/errorHandler';
 import { JwtUtil } from '../utils/jwt.util';
 import { sequelize } from '../infrastructure/database/sequelize';
+import { Organization } from '../models/organization.model';
+import { OrganizationMemberService } from './organization-member.service';
+import { CabinetMember } from '../models/cabinet-member.model';
+import { Cabinet } from '../models/cabinet.model';
+import { CabinetMemberPermission } from '../models/cabinet-member-permission.model';
 
 interface GetUsersParams {
   page: number;
@@ -25,7 +30,7 @@ export class UserService {
     page,
     limit,
     search,
-    sortBy = 'createdAt',
+    sortBy = 'created_at',
     sortOrder = 'desc',
   }: GetUsersParams): Promise<GetUsersResponse> {
     const offset = (page - 1) * limit;
@@ -45,15 +50,19 @@ export class UserService {
       limit,
       offset,
       order: [[sortBy, sortOrder]],
-      include: [{
-        model: Role,
-        as: 'roles',
-        through: { attributes: [] } // Exclude junction table attributes
-      }]
+      // include: [{
+      //   model: Role,
+      //   as: 'Roles',
+      //   through: { attributes: [] }
+      // }],
+      // raw: false // Ensure we get Sequelize model instances
     });
 
+    // Transform the users to plain objects
+    // const users = rows.map(user => user.get({ plain: true }));
+
     return {
-      users: rows,
+      users: rows, // This will now be a plain array of user objects
       total: count,
       page,
       totalPages: Math.ceil(count / limit),
@@ -64,7 +73,7 @@ export class UserService {
     const user = await User.findByPk(id, {
       include: [{
         model: Role,
-        as: 'roles',
+        as: 'Roles',
         through: { attributes: [] }
       }]
     });
@@ -120,12 +129,15 @@ export class UserService {
       role?: string;
       phone?: string;
       isActive?: boolean;
+      password?: string;
+      magicLinkToken?: string;
+      magicLinkTokenExpiresAt?: Date;
     }
   ): Promise<User> {
     const user = await User.findByPk(id, {
       include: [{
         model: Role,
-        as: 'roles',
+        as: 'Roles',
         through: { attributes: [] }
       }]
     });
@@ -161,6 +173,36 @@ export class UserService {
       await user.update(data);
     }
 
+    // If password is being set (during magic link flow), try to add user to organization
+    if (data.password) {
+      try {
+        // Extract domain from email
+        const emailDomain = user.email.split('@')[1];
+        
+        // Find organization by domain
+        const organization = await Organization.findOne({
+          where: { domain: emailDomain }
+        });
+
+        if (organization) {
+          // Get user's role (assuming first role is the default one)
+          const userRoles = await user.getRoles();
+          const defaultRole = userRoles[0]?.name || 'member_full'; // Default to member_full if no role found
+
+          // Add user to organization
+          await OrganizationMemberService.addMember(organization.id, {
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: defaultRole,
+          });
+        }
+      } catch (error) {
+        // Log error but don't fail the password update
+        console.error('Error adding user to organization:', error);
+      }
+    }
+
     // Fetch updated user with role information
     return this.getUser(id);
   }
@@ -190,4 +232,55 @@ export class UserService {
       type: 'user',
     });
   }
-} 
+
+  static async findByEmail(email: string): Promise<User | null> {
+    return User.findOne({ where: { email } });
+  }
+
+  static async findById(id: string): Promise<User | null> {
+    return User.findByPk(id);
+  }
+
+  static async create(data: Partial<User>): Promise<User> {
+    return User.create(data as User);
+  }
+
+  static async getUserCabinets(userId: string) {
+    const user = await User.findByPk(userId);
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    // Find all cabinet members for the user
+    const cabinetMembers = await CabinetMember.findAll({
+      where: {
+        userId,
+      },
+      include: [{
+        model: Cabinet,
+        as: 'cabinet',
+        where: {
+          status: 'approved',
+          isActive: true
+        },
+        attributes: ['id', 'name', 'description']
+      },
+      {
+        model: CabinetMemberPermission,
+        as: 'memberPermissions',
+        attributes: ['role', 'permissions'],
+        required: false,
+        where: {
+          userId,
+        }
+      }]
+    });
+
+    // Extract cabinets from cabinet members with role and permissions
+    return cabinetMembers.map(member => ({
+      ...member.cabinet?.toJSON(),
+      role: member.memberPermissions?.role,
+      permissions: member.memberPermissions?.permissions
+    }));
+  }
+}

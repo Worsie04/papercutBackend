@@ -21,8 +21,9 @@ const r2Client = new S3Client({
 export async function uploadFileToR2(
   file: Buffer,
   fileName: string,
-  folder: string
-): Promise<string> {
+  folder: string,
+  contentType: string = 'application/octet-stream'
+): Promise<void> {
   const key = `${folder}/${fileName}`;
   
   try {
@@ -31,12 +32,9 @@ export async function uploadFileToR2(
         Bucket: R2_BUCKET_NAME,
         Key: key,
         Body: file,
-        ContentType: 'image/png', // You might want to make this dynamic based on file type
+        ContentType: contentType,
       })
     );
-
-    // Return the public URL
-    return `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${key}`;
   } catch (error) {
     console.error('Error uploading to R2:', error);
     throw new Error('Failed to upload file to R2');

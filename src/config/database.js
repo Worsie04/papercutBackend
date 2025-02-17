@@ -19,6 +19,10 @@ module.exports = {
       acquire: 30000,
     },
     dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false,
+      },
       statement_timeout: 10000,
       idle_in_transaction_session_timeout: 10000,
     },

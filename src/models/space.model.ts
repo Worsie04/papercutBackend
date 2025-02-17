@@ -13,6 +13,7 @@ export class Space extends BaseModel {
   public description?: string;
   public type!: SpaceType;
   public ownerId!: string;
+  public createdById!: string;
   public company?: string;
   public tags!: string[];
   public country!: string;
@@ -57,6 +58,15 @@ Space.init(
         key: 'id',
       },
       field: 'owner_id',
+    },
+    createdById: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      field: 'created_by_id',
     },
     company: {
       type: DataTypes.STRING,

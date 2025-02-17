@@ -1,6 +1,7 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, BelongsToGetAssociationMixin } from 'sequelize';
 import { BaseModel, baseModelConfig } from './base.model';
 import { sequelize } from '../infrastructure/database/sequelize';
+import { Cabinet } from './cabinet.model';
 
 export enum RecordStatus {
   DRAFT = 'draft',
@@ -28,6 +29,10 @@ export class Record extends BaseModel {
   public isTemplate!: boolean;
   public isActive!: boolean;
   public lastModifiedBy!: string;
+
+  // Add cabinet association
+  public getCabinet!: BelongsToGetAssociationMixin<Cabinet>;
+  public readonly cabinet?: Cabinet;
 
   // Helper methods
   public async incrementVersion(): Promise<void> {
@@ -161,4 +166,6 @@ Record.init(
     tableName: 'records',
     paranoid: true,
   }
-); 
+);
+
+// ... rest of the file ... 

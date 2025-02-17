@@ -137,4 +137,6 @@ Cabinet.init(
     tableName: 'cabinets',
     paranoid: true,
   }
-); 
+);
+
+export default Cabinet; 

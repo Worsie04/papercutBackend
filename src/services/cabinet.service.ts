@@ -5,6 +5,10 @@ import { Space } from '../models/space.model';
 import { QueryTypes } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
 import { Transaction } from 'sequelize';
+import { SpaceMember } from '../models/space-member.model';
+import { CabinetMember } from '../models/cabinet-member.model';
+import { CabinetMemberPermission } from '../models/cabinet-member-permission.model';
+import { Op } from 'sequelize';
 
 interface CreateCabinetParams {
   name: string;
@@ -68,11 +72,31 @@ export class CabinetService {
   }
 
   static async getCabinet(id: string): Promise<Cabinet> {
-    const cabinet = await Cabinet.findByPk(id);
+    const cabinet = await Cabinet.findByPk(id, {
+      include: [
+        {
+          model: User,
+          as: 'createdBy',
+          attributes: ['id', 'firstName', 'lastName', 'avatar']
+        }
+      ]
+    });
+    
     if (!cabinet) {
       throw new AppError(404, 'Cabinet not found');
     }
-    return cabinet;
+    
+    // Transform the data to match the expected format
+    const cabinetData = cabinet.toJSON();
+    if (cabinetData.createdBy) {
+      cabinetData.createdBy = {
+        id: cabinetData.createdBy.id,
+        name: `${cabinetData.createdBy.firstName} ${cabinetData.createdBy.lastName}`,
+        avatar: cabinetData.createdBy.avatar || '/images/avatar.png'
+      };
+    }
+    
+    return cabinetData;
   }
 
   static async getCabinets(spaceId: string): Promise<Cabinet[]> {
@@ -186,5 +210,132 @@ export class CabinetService {
     });
 
     return cabinet;
+  }
+
+  static async assignCabinetsToUsers(userIds: string[], cabinetIds: string[], spaceId: string) {
+    // Verify that all cabinets exist and belong to the specified space
+    const cabinets = await Cabinet.findAll({
+      where: {
+        id: cabinetIds,
+        spaceId: spaceId,
+        status: 'approved' // Only allow assigning approved cabinets
+      }
+    });
+
+    if (cabinets.length !== cabinetIds.length) {
+      throw new AppError(404, 'One or more cabinets not found or not approved in the specified space');
+    }
+
+    // Verify that all users exist and have access to the space
+    // const spaceMembers = await SpaceMember.findAll({
+    //   where: {
+    //     userId: userIds,
+    //     spaceId: spaceId
+    //   }
+    // });
+
+    // if (spaceMembers.length !== userIds.length) {
+    //   throw new AppError(404, 'One or more users not found in the specified space');
+    // }
+
+    // Create cabinet member records in a transaction
+    await sequelize.transaction(async (transaction) => {
+      const assignments = [];
+      for (const userId of userIds) {
+        for (const cabinetId of cabinetIds) {
+          assignments.push({
+            userId,
+            cabinetId,
+            role: 'member_full', // Default role for assigned users
+            status: 'active'
+          });
+        }
+      }
+
+      // Bulk create cabinet member records
+      await CabinetMember.bulkCreate(assignments, {
+        transaction,
+        ignoreDuplicates: true // Skip if the assignment already exists
+      });
+    });
+  }
+
+  static async assignUsersWithPermissions(assignments: {
+    userId: string;
+    cabinetId: string;
+    role: string;
+    permissions: {
+      readRecords: boolean;
+      createRecords: boolean;
+      updateRecords: boolean;
+      deleteRecords: boolean;
+      manageCabinet: boolean;
+      downloadFiles: boolean;
+      exportTables: boolean;
+    };
+  }[], spaceId: string) {
+    const transaction = await sequelize.transaction();
+
+    try {
+      // Validate that all cabinets belong to the space
+      const cabinetIds = [...new Set(assignments.map(a => a.cabinetId))];
+      const cabinets = await Cabinet.findAll({
+        where: {
+          id: cabinetIds,
+          spaceId
+        }
+      });
+
+      if (cabinets.length !== cabinetIds.length) {
+        throw new AppError(400, 'Some cabinets do not belong to the specified space');
+      }
+
+      // Remove existing permissions for these user-cabinet combinations
+      await CabinetMemberPermission.destroy({
+        where: {
+          [Op.or]: assignments.map(a => ({
+            userId: a.userId,
+            cabinetId: a.cabinetId
+          }))
+        },
+        transaction
+      });
+
+      // Remove existing cabinet member records
+      await CabinetMember.destroy({
+        where: {
+          [Op.or]: assignments.map(a => ({
+            userId: a.userId,
+            cabinetId: a.cabinetId
+          }))
+        },
+        transaction
+      });
+
+      // Create new permissions
+      await CabinetMemberPermission.bulkCreate(assignments, {
+        transaction
+      });
+
+      // Create new cabinet member records
+      await CabinetMember.bulkCreate(
+        assignments.map(assignment => ({
+          userId: assignment.userId,
+          cabinetId: assignment.cabinetId,
+          role: assignment.role,
+          status: 'active'
+        })),
+        {
+          transaction
+        }
+      );
+
+      await transaction.commit();
+
+      return true;
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
   }
 } 

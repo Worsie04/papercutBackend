@@ -1,5 +1,4 @@
-import { DataTypes } from 'sequelize';
-import { BaseModel, baseModelConfig } from './base.model';
+import { Model, DataTypes } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
 import bcrypt from 'bcryptjs';
 
@@ -9,16 +8,20 @@ export enum AdminRole {
   MODERATOR = 'moderator',
 }
 
-export class Admin extends BaseModel {
-  public email!: string;
-  public password!: string;
+export class Admin extends Model {
+  public id!: string;
   public firstName!: string;
   public lastName!: string;
+  public email!: string;
+  public password!: string;
+  public role!: 'admin' | 'super_admin';
+  //public status!: 'active' | 'inactive';
+  public lastLoginAt?: Date;
+  public createdAt!: Date;
+  public updatedAt!: Date;
   public phone?: string;
-  public role!: AdminRole;
   public permissions!: string[];
   public isActive!: boolean;
-  public lastLoginAt?: Date;
   public emailVerifiedAt?: Date;
   public avatar?: string;
 
@@ -35,7 +38,7 @@ export class Admin extends BaseModel {
     return this.permissions.includes(permission);
   }
 
-  public toJSON(): any {
+  public toJSON(): object {
     const values = { ...this.get() };
     delete values.password;
     return values;
@@ -44,7 +47,21 @@ export class Admin extends BaseModel {
 
 Admin.init(
   {
-    ...baseModelConfig,
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    firstName: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      field: 'first_name',
+    },
+    lastName: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      field: 'last_name',
+    },
     email: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -57,24 +74,34 @@ Admin.init(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    firstName: {
-      type: DataTypes.STRING,
+    role: {
+      type: DataTypes.ENUM('admin', 'super_admin'),
       allowNull: false,
-      field: 'first_name',
+      defaultValue: 'admin',
     },
-    lastName: {
-      type: DataTypes.STRING,
+    // status: {
+    //   type: DataTypes.ENUM('active', 'inactive'),
+    //   allowNull: false,
+    //   defaultValue: 'active',
+    // },
+    lastLoginAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'last_login_at',
+    },
+    createdAt: {
+      type: DataTypes.DATE,
       allowNull: false,
-      field: 'last_name',
+      field: 'created_at',
+    },
+    updatedAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: 'updated_at',
     },
     phone: {
       type: DataTypes.STRING,
       allowNull: true,
-    },
-    role: {
-      type: DataTypes.ENUM(...Object.values(AdminRole)),
-      allowNull: false,
-      defaultValue: AdminRole.ADMIN,
     },
     permissions: {
       type: DataTypes.ARRAY(DataTypes.STRING),
@@ -86,11 +113,6 @@ Admin.init(
       allowNull: false,
       defaultValue: true,
       field: 'is_active',
-    },
-    lastLoginAt: {
-      type: DataTypes.DATE,
-      allowNull: true,
-      field: 'last_login_at',
     },
     emailVerifiedAt: {
       type: DataTypes.DATE,
@@ -106,7 +128,6 @@ Admin.init(
     sequelize,
     modelName: 'Admin',
     tableName: 'admins',
-    paranoid: true,
     hooks: {
       beforeSave: async (admin: Admin) => {
         if (admin.changed('password')) {

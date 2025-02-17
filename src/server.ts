@@ -1,18 +1,10 @@
-import { app } from './app';
+import { app, initializeApp } from './app';
 import { config } from './config';
-import { sequelize } from './infrastructure/database/sequelize';
 
 const startServer = async () => {
   try {
-    // Database connection
-    await sequelize.authenticate();
-    console.log('Database connection has been established successfully.');
-    
-    // Sync database models (in development)
-    if (config.nodeEnv === 'production') {
-      await sequelize.sync({ alter: true });
-      console.log('Database synced successfully');
-    }
+    // Initialize the app (including database)
+    await initializeApp();
 
     // Start server
     app.listen(config.port, () => {

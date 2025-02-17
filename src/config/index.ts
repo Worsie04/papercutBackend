@@ -14,7 +14,7 @@ export const config = {
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
   },
-  
+   
   // JWT
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key1',
@@ -53,7 +53,7 @@ export const config = {
   // Security
   security: {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '10', 10),
-    rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
+    rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '9000000', 10), // 15 minutes
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
   },
 }; 

@@ -1,6 +1,7 @@
 import { Sequelize } from 'sequelize';
 import { config } from '../../config';
 
+// Create Sequelize instance
 export const sequelize = new Sequelize({
   dialect: 'postgres',
   host: config.database.host,
@@ -19,4 +20,32 @@ export const sequelize = new Sequelize({
     acquire: 30000,
     idle: 10000
   }
-}); 
+});
+
+// Function to initialize database connection and setup
+export const initializeDatabase = async () => {
+  try {
+    // Test the connection first
+    await sequelize.authenticate();
+    console.log('Database connection has been established successfully.');
+
+    // Import and initialize models
+    const { initializeModels } = await import('../../models');
+    const models = initializeModels(sequelize);
+
+    // Import and setup associations after models are initialized
+    const { setupAssociations } = await import('../../models/associations');
+    await setupAssociations();
+
+    // Sync models with database (in development only)
+    if (config.nodeEnv === 'production') {
+      await sequelize.sync({ alter: true });
+      console.log('Database models synchronized successfully.');
+    }
+
+    return models;
+  } catch (error) {
+    console.error('Unable to connect to the database:', error);
+    throw error;
+  }
+}; 

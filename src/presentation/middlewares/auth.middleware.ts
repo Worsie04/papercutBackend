@@ -11,30 +11,47 @@ declare global {
         id: string;
         email: string;
         type: string;
+        role?: string;
       };
     }
   }
 }
 
-export const authenticate = (type?: 'user' | 'admin') => {
+type UserType = 'user' | 'admin' | 'super_admin' | 'super_user';
+
+export const authenticate = (type?: UserType | UserType[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Check for token in cookies or Authorization header
       const token = req.cookies?.access_token_w || req.headers.authorization?.split(' ')[1];
       
-      console.log('Cookie token:', req.cookies?.access_token_w);
-      console.log('Auth header:', req.headers.authorization);
+      //console.log('Cookie token:', req.cookies?.access_token_w);
+      //console.log('Auth header:', req.headers.authorization);
       
       if (!token) {
         throw new AppError(401, 'No token provided');
       }
 
-      console.log('Using token:', token);
+      //console.log('Using token:', token);
       const decoded = JwtUtil.verifyToken(token);
       console.log('Decoded token:', decoded);
 
-      if (type && decoded.type !== type) {
-        throw new AppError(403, 'Unauthorized access');
+      if (type) {
+        if (Array.isArray(type)) {
+          // Check if user type or role matches any of the allowed types
+          const hasValidType = type.some(t => 
+            decoded.type === t || decoded.role === t
+          );
+          console.log('hasValidType:', hasValidType);
+          if (!hasValidType) {
+            throw new AppError(403, 'Unauthorized access');
+          }
+        } else {
+          // Single type check
+          if (decoded.type !== type && decoded.role !== type) {
+            throw new AppError(403, 'Unauthorized access');
+          }
+        }
       }
 
       req.user = decoded;
@@ -59,7 +76,7 @@ export const requireAdmin = (roles?: AdminRole[]) => {
 
       if (roles && roles.length > 0) {
         const admin = await Admin.findByPk(req.user.id);
-        if (!admin || !roles.includes(admin.role)) {
+        if (!admin || !roles.includes(admin.role as AdminRole)) {
           throw new AppError(403, 'Insufficient permissions');
         }
       }
@@ -140,4 +157,4 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
   } catch (error) {
     next(new AppError(401, 'Unauthorized'));
   }
-}; 
+};

@@ -15,9 +15,13 @@ interface UserAttributes {
   createdAt: Date;
   updatedAt: Date;
   avatar?: string;
+  twoFactorSecret?: string | null;
+  twoFactorEnabled: boolean;
+  magicLinkToken?: string;
+  magicLinkTokenExpiresAt?: Date;
 }
 
-interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'isActive' | 'createdAt' | 'updatedAt' | 'avatar'> {}
+interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'isActive' | 'createdAt' | 'updatedAt' | 'avatar' | 'twoFactorSecret' | 'twoFactorEnabled' | 'magicLinkToken' | 'magicLinkTokenExpiresAt'> {}
 
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
   public id!: string;
@@ -31,6 +35,10 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public createdAt!: Date;
   public updatedAt!: Date;
   public avatar?: string;
+  public twoFactorSecret?: string | null;
+  public twoFactorEnabled!: boolean;
+  public magicLinkToken?: string;
+  public magicLinkTokenExpiresAt?: Date;
 
   // Association methods
   public readonly roles?: Role[];
@@ -68,7 +76,7 @@ User.init(
     },
     password: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
     },
     firstName: {
       type: DataTypes.STRING,
@@ -102,11 +110,28 @@ User.init(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    twoFactorSecret: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    twoFactorEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    magicLinkToken: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    magicLinkTokenExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     sequelize,
     modelName: 'User',
     tableName: 'users',
+    underscored: true,
     hooks: {
       beforeCreate: async (user: User) => {
         if (user.password) {

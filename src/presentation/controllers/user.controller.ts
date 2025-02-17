@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../../services/user.service';
 import { AppError } from '../middlewares/errorHandler';
 import { EmailService } from '../../services/email.service';
+import bcrypt from 'bcryptjs';
+import { CabinetService } from '../../services/cabinet.service';
+import { GroupService } from '../../services/group.service';
 
 interface CreateUserRequest {
   email: string;
@@ -20,6 +23,16 @@ interface UpdateUserRequest {
   role?: string;
   phone?: string;
   isActive?: boolean;
+}
+
+// Add this interface for the authenticated request
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    email: string;
+    type: string;
+    role?: string;
+  };
 }
 
 export class UserController {
@@ -105,6 +118,65 @@ export class UserController {
       const user = await UserService.getUser(id);
       await EmailService.sendVerificationEmail(user.email, token, 'user');
       res.json({ message: 'Verification email sent' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getCurrentUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as AuthenticatedRequest).user.id;
+      const user = await UserService.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateProfile(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as AuthenticatedRequest).user.id;
+      const user = await UserService.updateUser(userId, req.body);
+      res.json(user);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updatePassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as AuthenticatedRequest).user.id;
+      const { currentPassword, newPassword } = req.body;
+
+      const user = await UserService.getUser(userId);
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+
+      if (!isPasswordValid) {
+        throw new AppError(400, 'Current password is incorrect');
+      }
+
+      await UserService.updateUser(userId, { password: newPassword });
+      res.json({ message: 'Password updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getUserCabinets(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.params.id;
+      const cabinets = await UserService.getUserCabinets(userId);
+      res.json(cabinets);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getUserGroups(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.params.id;
+      const groups = await GroupService.getGroupsByUserId(userId);
+      res.json(groups);
     } catch (error) {
       next(error);
     }

@@ -2,6 +2,9 @@ import { User } from '../models/user.model';
 import { Admin } from '../models/admin.model';
 import { JwtUtil, TokenPayload } from '../utils/jwt.util';
 import { AppError } from '../presentation/middlewares/errorHandler';
+import { authenticator } from 'otplib';
+import crypto from 'crypto';
+import { Op } from 'sequelize';
 
 interface LoginResponse {
   accessToken: string;
@@ -15,6 +18,74 @@ interface TokenResponse {
 }
 
 export class AuthService {
+  private static instance: AuthService;
+
+  private constructor() {}
+
+  public static getInstance(): AuthService {
+    if (!AuthService.instance) {
+      AuthService.instance = new AuthService();
+    }
+    return AuthService.instance;
+  }
+
+  static async login(email: string, password: string, twoFactorToken?: string): Promise<{ user: User; accessToken: string; requiresTwoFactor: boolean }> {
+    try {
+      const user = await User.findOne({ where: { email } });
+      if (!user || !user.isActive) {
+        throw new AppError(401, 'Invalid credentials');
+      }
+
+      const isPasswordValid = await user.comparePassword(password);
+      if (!isPasswordValid) {
+        throw new AppError(401, 'Invalid credentials');
+      }
+
+      // Check if 2FA is enabled
+      if (user.twoFactorEnabled) {
+        // If 2FA token is not provided, return flag indicating 2FA is required
+        if (!twoFactorToken) {
+          return {
+            user: {
+              id: user.id,
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+            } as User,
+            accessToken: '',
+            requiresTwoFactor: true
+          };
+        }
+
+        // Verify 2FA token
+        const isValid = authenticator.verify({
+          token: twoFactorToken,
+          secret: user.twoFactorSecret!
+        });
+
+        if (!isValid) {
+          throw new AppError(401, 'Invalid 2FA code');
+        }
+      }
+
+      // Generate JWT token
+      const accessToken = JwtUtil.generateToken({
+        id: user.id,
+        email: user.email,
+        type: 'user'
+      });
+
+      return {
+        user,
+        accessToken,
+        requiresTwoFactor: false
+      };
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
+  }
+
   static async loginUser(email: string, password: string): Promise<LoginResponse> {
     const user = await User.findOne({ where: { email } });
     if (!user) {
@@ -266,6 +337,67 @@ export class AuthService {
       id: entity.id,
       email: entity.email,
       type,
+    };
+
+    return JwtUtil.generateToken(payload);
+  }
+
+  static async generateMagicLinkToken(userId: string): Promise<string> {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Store the token in the database
+    await User.update(
+      { magicLinkToken: token, magicLinkTokenExpiresAt: expiresAt },
+      { where: { id: userId } }
+    );
+
+    return token;
+  }
+
+  static async verifyMagicLinkToken(token: string): Promise<string | null> {
+    const user = await User.findOne({
+      where: {
+        magicLinkToken: token,
+        magicLinkTokenExpiresAt: {
+          [Op.gt]: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    // // Clear the used token
+    // await User.update(
+    //   { 
+    //     magicLinkToken: '',
+    //     magicLinkTokenExpiresAt: undefined 
+    //   },
+    //   { where: { id: user.id } }
+    // );
+
+    return user.id;
+  }
+
+  static async clearMagicLinkToken(userId: string): Promise<void> {
+    await User.update(
+      { magicLinkToken: '', magicLinkTokenExpiresAt: undefined },
+      { where: { id: userId } }
+    );
+  }
+
+  static async isTwoFactorEnabled(userId: string): Promise<boolean> {
+    const user = await User.findByPk(userId);
+    return user?.twoFactorEnabled || false;
+  }
+
+  static async generateAccessToken(user: User): Promise<string> {
+    const payload: TokenPayload = {
+      id: user.id,
+      email: user.email,
+      type: 'user',
     };
 
     return JwtUtil.generateToken(payload);

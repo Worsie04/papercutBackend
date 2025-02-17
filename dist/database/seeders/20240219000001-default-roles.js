@@ -6,7 +6,7 @@ module.exports = {
         const roles = [
             {
                 id: uuidv4(),
-                name: 'system_admin',
+                name: 'super_admin',
                 description: 'Responsible for administrating the application',
                 permissions: ['all'],
                 is_system: true,
@@ -74,7 +74,7 @@ module.exports = {
         await queryInterface.bulkDelete('roles', {
             name: {
                 [Sequelize.Op.in]: [
-                    'system_admin',
+                    'super_admin',
                     'super_user',
                     'owner',
                     'co_owner',

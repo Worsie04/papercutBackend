@@ -4,6 +4,10 @@ import { User } from '../models/user.model';
 import { AppError } from '../presentation/middlewares/errorHandler';
 import { sequelize } from '../infrastructure/database/sequelize';
 import { uploadFile } from '../utils/upload.util';
+import { SpaceInvitation } from '../models/spaceInvitation.model';
+import { sendInvitationEmail } from '../utils/email.util';
+import { SpaceMember } from '../models/space-member.model';
+import { Cabinet } from '../models/cabinet.model';
 
 interface CreateSpaceParams {
   name: string;
@@ -16,6 +20,19 @@ interface CreateSpaceParams {
   logo?: any;
   requireApproval: boolean;
   ownerId: string;
+}
+
+interface InviteMembersParams {
+  emails: string[];
+  role: string;
+  message?: string;
+  inviterId: string;
+}
+
+interface InvitationResult {
+  email: string;
+  status: 'success' | 'error';
+  message?: string;
 }
 
 export class SpaceService {
@@ -55,6 +72,7 @@ export class SpaceService {
           description: data.description,
           type: SpaceType.CORPORATE,
           ownerId: data.ownerId,
+          createdById: data.ownerId,
           settings: {
             userGroup: data.userGroup,
           },
@@ -75,15 +93,18 @@ export class SpaceService {
           throw new AppError(400, `Users not found: ${missingUserIds.join(', ')}`);
         }
 
+        // Create space members directly
         await Promise.all(
           users.map((user) =>
-            newSpace.addMember(user, {
-              through: {
+            SpaceMember.create(
+              {
+                spaceId: newSpace.id,
+                userId: user.id,
                 role: data.userGroup,
                 permissions: [],
               },
-              transaction,
-            })
+              { transaction }
+            )
           )
         );
       }
@@ -100,13 +121,19 @@ export class SpaceService {
       include: [
         {
           model: User,
-          as: 'members',
-          through: { attributes: ['role', 'permissions'] },
+          as: 'spaceMembers',
+          through: { 
+            attributes: ['role', 'permissions'] 
+          },
         },
         {
           model: User,
           as: 'owner',
         },
+        {
+          model: User,
+          as: 'createdBy',
+        }
       ],
     });
 
@@ -114,7 +141,15 @@ export class SpaceService {
       throw new AppError(404, 'Space not found');
     }
 
-    return space;
+    // Transform the response to include role directly in member object
+    const transformedSpace = space.toJSON();
+    transformedSpace.members = transformedSpace.spaceMembers.map((member: any) => ({
+      ...member,
+      role: member.SpaceMember?.role || 'member'
+    }));
+    delete transformedSpace.spaceMembers;
+
+    return transformedSpace;
   }
 
   static async addMember(
@@ -160,17 +195,31 @@ export class SpaceService {
       include: [
         {
           model: User,
-          as: 'members',
+          as: 'spaceMembers',
           through: { attributes: ['role', 'permissions'] },
         },
         {
           model: User,
           as: 'owner',
         },
+        {
+          model: User,
+          as: 'createdBy',
+        }
       ],
       order: [['createdAt', 'DESC']],
     });
-    return spaces;
+
+    // Transform each space to maintain backward compatibility
+    return spaces.map(space => {
+      const transformedSpace = space.toJSON();
+      transformedSpace.members = transformedSpace.spaceMembers.map((member: any) => ({
+        ...member,
+        role: member.SpaceMember?.role || 'member'
+      }));
+      delete transformedSpace.spaceMembers;
+      return transformedSpace;
+    });
   }
 
   static async getPendingApprovals(userId: string) {
@@ -240,4 +289,112 @@ export class SpaceService {
       throw error;
     }
   }
+
+  static async inviteMembers(
+    spaceId: string, 
+    { emails, role, message, inviterId }: InviteMembersParams
+  ): Promise<InvitationResult[]> {
+    const results: InvitationResult[] = [];
+    const space = await Space.findByPk(spaceId);
+    const inviter = await User.findByPk(inviterId);
+
+    if (!space) {
+      throw new AppError(404, 'Space not found');
+    }
+
+    if (!inviter) {
+      throw new AppError(404, 'Inviter not found');
+    }
+
+    // Process each email
+    for (const email of emails) {
+      try {
+        // Check if user already exists
+        let user = await User.findOne({ where: { email } });
+
+        if (user) {
+          // Check if user is already a member
+          const isMember = await SpaceMember.findOne({
+            where: {
+              spaceId,
+              userId: user.id
+            }
+          });
+          if (isMember) {
+            results.push({
+              email,
+              status: 'error',
+              message: 'User is already a member of this space'
+            });
+            continue;
+          }
+
+          // Add user as member
+          await space.addMember(user, {
+            through: {
+              role,
+              permissions: []
+            }
+          });
+
+          results.push({
+            email,
+            status: 'success',
+            message: 'User added as member'
+          });
+        } else {
+          // Create invitation record
+          await SpaceInvitation.create({
+            spaceId,
+            email,
+            role,
+            inviterId,
+            status: 'pending',
+            message
+          });
+
+          // Send invitation email
+          await sendInvitationEmail({
+            to: email,
+            spaceName: space.name,
+            inviterName: `${inviter.firstName} ${inviter.lastName}`,
+            role,
+            message,
+            invitationLink: `${process.env.CLIENT_URL}/invitations/accept?space=${spaceId}&email=${encodeURIComponent(email)}`
+          });
+
+          results.push({
+            email,
+            status: 'success',
+            message: 'Invitation sent'
+          });
+        }
+      } catch (error) {
+        console.error(`Error processing invitation for ${email}:`, error);
+        results.push({
+          email,
+          status: 'error',
+          message: 'Failed to process invitation'
+        });
+      }
+    }
+
+    return results;
+  }
+
+  static async updateMemberRole(spaceId: string, userId: string, role: string): Promise<void> {
+    const spaceMember = await SpaceMember.findOne({
+      where: {
+        spaceId,
+        userId
+      }
+    });
+
+    if (!spaceMember) {
+      throw new AppError(404, 'Member not found in this space');
+    }
+
+    await spaceMember.update({ role });
+  }
+
 } 
