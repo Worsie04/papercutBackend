@@ -48,7 +48,7 @@ app.use(cors({
 // Cookie parser middleware
 app.use(cookieParser());
 
-// Global rate limiting
+// Global rate limiting to prevent abuse
 // const limiter = rateLimit({
 //   windowMs: config.security.rateLimitWindowMs,
 //   max: config.security.rateLimitMax,
