@@ -27,7 +27,11 @@ export class Admin extends Model {
 
   // Helper methods
   public async comparePassword(candidatePassword: string): Promise<boolean> {
-    return bcrypt.compare(candidatePassword, this.password);
+    console.log('Comparing password...');
+    console.log('Stored hash:', this.password);
+    const result = await bcrypt.compare(candidatePassword, this.password);
+    console.log('Password comparison result:', result);
+    return result;
   }
 
   public getFullName(): string {

@@ -41,7 +41,7 @@ router.post('/set-password', validate_regular(setPasswordSchema), AuthController
 //validate(loginSchema)
 // Public routes
 router.post('/login', authLimiter, validate_regular(loginSchema), AuthController.login);
-router.post('/admin/login', authLimiter, validate(loginSchema), AuthController.loginAdmin);
+router.post('/admin/login', authLimiter, validate_regular(loginSchema), AuthController.loginAdmin);
 router.post('/refresh-token', tokenLimiter, validate(refreshTokenSchema), AuthController.refreshToken);
 router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), AuthController.forgotPassword);
 router.post('/reset-password', authLimiter, validate(resetPasswordSchema), AuthController.resetPassword);

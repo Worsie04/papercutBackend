@@ -11,6 +11,7 @@ export class AuthController {
   
 
   static async login(req: Request, res: Response): Promise<void>{
+    console.log("login called")
     try {
       const { email, password, twoFactorToken } = req.body;
 
@@ -55,9 +56,13 @@ export class AuthController {
   };
 
   static async loginAdmin(req: Request, res: Response, next: NextFunction) {
+    console.log("loginAdmin called")
     try {
       const { email, password } = req.body;
+      console.log('Login attempt for admin:', email);
+      
       const result = await AuthService.loginAdmin(email, password);
+      console.log('Login successful for admin:', email);
       
       // Set token in cookie
       res.cookie('access_token_w', result.accessToken, {
@@ -69,6 +74,7 @@ export class AuthController {
       
       res.json(result);
     } catch (error) {
+      console.error('Admin login error:', error);
       next(error);
     }
   }

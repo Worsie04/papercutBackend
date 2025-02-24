@@ -119,17 +119,27 @@ export class AuthService {
   }
 
   static async loginAdmin(email: string, password: string): Promise<LoginResponse> {
+    console.log('AuthService.loginAdmin called with email:', email);
+    
     const admin = await Admin.findOne({ where: { email } });
+    console.log('Admin found:', admin ? 'yes' : 'no');
+    
     if (!admin) {
+      console.log('Admin not found for email:', email);
       throw new AppError(401, 'Invalid credentials');
     }
 
+    console.log('Comparing passwords...');
     const isPasswordValid = await admin.comparePassword(password);
+    console.log('Password valid:', isPasswordValid);
+    
     if (!isPasswordValid) {
+      console.log('Invalid password for admin:', email);
       throw new AppError(401, 'Invalid credentials');
     }
 
     if (!admin.isActive) {
+      console.log('Admin account is not active:', email);
       throw new AppError(403, 'Account is deactivated');
     }
 
@@ -144,6 +154,7 @@ export class AuthService {
       role: admin.role,
     };
 
+    console.log('Generating tokens for admin:', email);
     return {
       accessToken: JwtUtil.generateToken(payload),
       refreshToken: JwtUtil.generateRefreshToken(admin.id, 'admin'),
