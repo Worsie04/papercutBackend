@@ -78,10 +78,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // Mount routes
 app.use(routes);
-
-console.log('Registered routes:', app._router.stack
+process.stdout.write('Registered routes: ' + JSON.stringify(app._router.stack
   .filter((r: any) => r.route)
-  .map((r: any) => `${r.route.path} - ${r.route.methods}`));
+  .map((r: any) => `${r.route.path} - ${r.route.methods}`)) + '\n');
 
 app.set('trust proxy', 1); // Proxy arxasında işləmək üçün
 
