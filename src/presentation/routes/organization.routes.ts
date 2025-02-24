@@ -13,7 +13,7 @@ router.use(authenticate(['admin', 'super_admin', 'super_user', 'user']));
 router.post('/', authenticate(['admin', 'super_admin']), OrganizationController.createOrganization);
 
 // Get all organizations (admin and super_admin)
-router.get('/', authenticate(['admin', 'super_admin']), OrganizationController.getOrganizations);
+router.get('/', OrganizationController.getOrganizations);//authenticate(['admin', 'super_admin'])
 
 // Get user's organizations (available to all authenticated users)
 router.get('/user', authenticate(['user', 'admin', 'super_admin', 'super_user']), OrganizationController.getUserOrganizations);
