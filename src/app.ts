@@ -79,6 +79,10 @@ app.use(express.urlencoded({ extended: true }));
 // Mount routes
 app.use(routes);
 
+console.log('Registered routes:', app._router.stack
+  .filter((r: any) => r.route)
+  .map((r: any) => `${r.route.path} - ${r.route.methods}`));
+
 // Error logging
 app.use(errorLogger);
 
