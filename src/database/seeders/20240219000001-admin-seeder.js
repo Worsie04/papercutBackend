@@ -20,7 +20,8 @@ module.exports = {
         is_active: true,
         email_verified_at: now,
         created_at: now,
-        updated_at: now
+        updated_at: now,
+        deleted_at: null
       }
     ]);
   },
