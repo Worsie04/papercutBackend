@@ -83,6 +83,8 @@ console.log('Registered routes:', app._router.stack
   .filter((r: any) => r.route)
   .map((r: any) => `${r.route.path} - ${r.route.methods}`));
 
+app.set('trust proxy', 1); // Proxy arxasında işləmək üçün
+
 // Error logging
 app.use(errorLogger);
 
