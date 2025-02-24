@@ -1,10 +1,11 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { OrganizationService } from '../../services/organization.service';
 import { OrganizationMemberService } from '../../services/organization-member.service';
 import { AppError } from './errorHandler';
+import { AuthenticatedRequest } from '../../types/express';
 
 export async function checkOrganizationPermissions(
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) {
@@ -51,11 +52,13 @@ export async function checkOrganizationPermissions(
       case 'POST':
       case 'PATCH':
       case 'PUT':
-        // Only owners, admins, and members with management permissions can modify
+        // Only owners, co-owners, system admins, and super users can modify
         if (
           userMember.role === 'owner' ||
-          userMember.role === 'admin' ||
-          (userMember.role === 'custom' &&
+          userMember.role === 'co_owner' ||
+          userMember.role === 'system_admin' ||
+          userMember.role === 'super_user' ||
+          (userMember.role === 'member_full' &&
             userMember.customPermissions?.canManageRoles)
         ) {
           return next();
@@ -63,8 +66,12 @@ export async function checkOrganizationPermissions(
         break;
 
       case 'DELETE':
-        // Only owners and admins can delete
-        if (userMember.role === 'owner' || userMember.role === 'admin') {
+        // Only owners and system admins can delete
+        if (
+          userMember.role === 'owner' ||
+          userMember.role === 'system_admin' ||
+          userMember.role === 'super_user'
+        ) {
           return next();
         }
         break;
@@ -77,7 +84,7 @@ export async function checkOrganizationPermissions(
 }
 
 export async function checkOrganizationOwnership(
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) {

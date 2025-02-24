@@ -30,6 +30,14 @@ Space.init(Object.assign(Object.assign({}, base_model_1.baseModelConfig), { name
             key: 'id',
         },
         field: 'owner_id',
+    }, createdById: {
+        type: sequelize_1.DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'users',
+            key: 'id',
+        },
+        field: 'created_by_id',
     }, company: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: true,

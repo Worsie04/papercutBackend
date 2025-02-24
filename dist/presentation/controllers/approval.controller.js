@@ -43,11 +43,16 @@ class ApprovalController {
         }
     }
     static async approveRequest(req, res) {
+        var _a;
         try {
             const { id } = req.params;
             const { type } = req.body;
+            const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+            if (!userId) {
+                return res.status(401).json({ error: 'User not authenticated' });
+            }
             if (type === 'cabinet') {
-                await cabinet_service_1.CabinetService.approveCabinet(id);
+                await cabinet_service_1.CabinetService.approveCabinet(id, userId);
             }
             else if (type === 'space') {
                 await space_service_1.SpaceService.approveSpace(id);
@@ -63,11 +68,16 @@ class ApprovalController {
         }
     }
     static async rejectRequest(req, res) {
+        var _a;
         try {
             const { id } = req.params;
             const { type, reason } = req.body;
+            const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+            if (!userId) {
+                return res.status(401).json({ error: 'User not authenticated' });
+            }
             if (type === 'cabinet') {
-                await cabinet_service_1.CabinetService.rejectCabinet(id, reason);
+                await cabinet_service_1.CabinetService.rejectCabinet(id, userId, reason);
             }
             else if (type === 'space') {
                 await space_service_1.SpaceService.rejectSpace(id, reason);

@@ -34,7 +34,7 @@ User.init({
     },
     password: {
         type: sequelize_1.DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
     },
     firstName: {
         type: sequelize_1.DataTypes.STRING,
@@ -68,10 +68,27 @@ User.init({
         type: sequelize_1.DataTypes.STRING,
         allowNull: true,
     },
+    twoFactorSecret: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+    },
+    twoFactorEnabled: {
+        type: sequelize_1.DataTypes.BOOLEAN,
+        defaultValue: false,
+    },
+    magicLinkToken: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+    },
+    magicLinkTokenExpiresAt: {
+        type: sequelize_1.DataTypes.DATE,
+        allowNull: true,
+    },
 }, {
     sequelize: sequelize_2.sequelize,
     modelName: 'User',
     tableName: 'users',
+    underscored: true,
     hooks: {
         beforeCreate: async (user) => {
             if (user.password) {

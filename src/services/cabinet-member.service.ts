@@ -1,19 +1,32 @@
-import { CabinetMember, CabinetMemberPermissions } from '../models/cabinet-member.model';
+import { CabinetMember } from '../models/cabinet-member.model';
 import { Cabinet } from '../models/cabinet.model';
 import { User } from '../models/user.model';
 import { AppError } from '../presentation/middlewares/errorHandler';
 import { sequelize } from '../infrastructure/database/sequelize';
 import { Transaction } from 'sequelize';
 
+interface CabinetMemberPermissions {
+  readRecords: boolean;
+  createRecords: boolean;
+  updateRecords: boolean;
+  deleteRecords: boolean;
+  manageCabinet: boolean;
+  downloadFiles: boolean;
+  exportTables: boolean;
+}
+
 export class CabinetMemberService {
   static async assignUsers(
     cabinetIds: string[],
     userIds: string[],
-    defaultPermissions: CabinetMemberPermissions = {
-      canRead: true,
-      canWrite: false,
-      canDelete: false,
-      canShare: false,
+    defaultPermissions: Partial<CabinetMemberPermissions> = {
+      readRecords: true,
+      createRecords: false,
+      updateRecords: false,
+      deleteRecords: false,
+      manageCabinet: false,
+      downloadFiles: true,
+      exportTables: false
     }
   ): Promise<void> {
     await sequelize.transaction(async (transaction: Transaction) => {
@@ -144,7 +157,8 @@ export class CabinetMemberService {
       return false;
     }
 
-    return member.permissions[requiredPermission] || false;
+    const permissions = member.permissions as CabinetMemberPermissions;
+    return permissions[requiredPermission] ?? false;
   }
 
   static async getMember(cabinetId: string, userId: string): Promise<CabinetMember | null> {

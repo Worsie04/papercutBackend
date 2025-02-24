@@ -133,4 +133,25 @@ OrganizationMember.init(
     tableName: 'organization_members',
     underscored: true,
   }
-); 
+);
+
+export function setupOrganizationMemberAssociations(): void {
+  // Import models here to avoid circular dependencies
+  const { User } = require('./user.model');
+  const { Organization } = require('./organization.model');
+
+  OrganizationMember.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user'
+  });
+
+  OrganizationMember.belongsTo(Organization, {
+    foreignKey: 'organizationId',
+    as: 'organization'
+  });
+
+  OrganizationMember.belongsTo(User, {
+    foreignKey: 'invitedBy',
+    as: 'inviter'
+  });
+} 

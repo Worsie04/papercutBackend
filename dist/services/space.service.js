@@ -6,6 +6,9 @@ const user_model_1 = require("../models/user.model");
 const errorHandler_1 = require("../presentation/middlewares/errorHandler");
 const sequelize_1 = require("../infrastructure/database/sequelize");
 const upload_util_1 = require("../utils/upload.util");
+const spaceInvitation_model_1 = require("../models/spaceInvitation.model");
+const email_util_1 = require("../utils/email.util");
+const space_member_model_1 = require("../models/space-member.model");
 class SpaceService {
     static async getAvailableUsers() {
         const users = await user_model_1.User.findAll({
@@ -38,6 +41,7 @@ class SpaceService {
                 description: data.description,
                 type: space_model_1.SpaceType.CORPORATE,
                 ownerId: data.ownerId,
+                createdById: data.ownerId,
                 settings: {
                     userGroup: data.userGroup,
                 },
@@ -53,13 +57,13 @@ class SpaceService {
                     const missingUserIds = data.users.filter(id => !foundUserIds.includes(id));
                     throw new errorHandler_1.AppError(400, `Users not found: ${missingUserIds.join(', ')}`);
                 }
-                await Promise.all(users.map((user) => newSpace.addMember(user, {
-                    through: {
-                        role: data.userGroup,
-                        permissions: [],
-                    },
-                    transaction,
-                })));
+                // Create space members directly
+                await Promise.all(users.map((user) => space_member_model_1.SpaceMember.create({
+                    spaceId: newSpace.id,
+                    userId: user.id,
+                    role: data.userGroup,
+                    permissions: [],
+                }, { transaction })));
             }
             return newSpace;
         });
@@ -71,19 +75,32 @@ class SpaceService {
             include: [
                 {
                     model: user_model_1.User,
-                    as: 'members',
-                    through: { attributes: ['role', 'permissions'] },
+                    as: 'spaceMembers',
+                    through: {
+                        attributes: ['role', 'permissions']
+                    },
                 },
                 {
                     model: user_model_1.User,
                     as: 'owner',
                 },
+                {
+                    model: user_model_1.User,
+                    as: 'createdBy',
+                }
             ],
         });
         if (!space) {
             throw new errorHandler_1.AppError(404, 'Space not found');
         }
-        return space;
+        // Transform the response to include role directly in member object
+        const transformedSpace = space.toJSON();
+        transformedSpace.members = transformedSpace.spaceMembers.map((member) => {
+            var _a;
+            return (Object.assign(Object.assign({}, member), { role: ((_a = member.SpaceMember) === null || _a === void 0 ? void 0 : _a.role) || 'member' }));
+        });
+        delete transformedSpace.spaceMembers;
+        return transformedSpace;
     }
     static async addMember(spaceId, userId, role = 'member') {
         const [space, user] = await Promise.all([
@@ -118,17 +135,30 @@ class SpaceService {
             include: [
                 {
                     model: user_model_1.User,
-                    as: 'members',
+                    as: 'spaceMembers',
                     through: { attributes: ['role', 'permissions'] },
                 },
                 {
                     model: user_model_1.User,
                     as: 'owner',
                 },
+                {
+                    model: user_model_1.User,
+                    as: 'createdBy',
+                }
             ],
             order: [['createdAt', 'DESC']],
         });
-        return spaces;
+        // Transform each space to maintain backward compatibility
+        return spaces.map(space => {
+            const transformedSpace = space.toJSON();
+            transformedSpace.members = transformedSpace.spaceMembers.map((member) => {
+                var _a;
+                return (Object.assign(Object.assign({}, member), { role: ((_a = member.SpaceMember) === null || _a === void 0 ? void 0 : _a.role) || 'member' }));
+            });
+            delete transformedSpace.spaceMembers;
+            return transformedSpace;
+        });
     }
     static async getPendingApprovals(userId) {
         try {
@@ -193,6 +223,99 @@ class SpaceService {
             console.error('Error rejecting space:', error);
             throw error;
         }
+    }
+    static async inviteMembers(spaceId, { emails, role, message, inviterId }) {
+        const results = [];
+        const space = await space_model_1.Space.findByPk(spaceId);
+        const inviter = await user_model_1.User.findByPk(inviterId);
+        if (!space) {
+            throw new errorHandler_1.AppError(404, 'Space not found');
+        }
+        if (!inviter) {
+            throw new errorHandler_1.AppError(404, 'Inviter not found');
+        }
+        // Process each email
+        for (const email of emails) {
+            try {
+                // Check if user already exists
+                let user = await user_model_1.User.findOne({ where: { email } });
+                if (user) {
+                    // Check if user is already a member
+                    const isMember = await space_member_model_1.SpaceMember.findOne({
+                        where: {
+                            spaceId,
+                            userId: user.id
+                        }
+                    });
+                    if (isMember) {
+                        results.push({
+                            email,
+                            status: 'error',
+                            message: 'User is already a member of this space'
+                        });
+                        continue;
+                    }
+                    // Add user as member
+                    await space.addMember(user, {
+                        through: {
+                            role,
+                            permissions: []
+                        }
+                    });
+                    results.push({
+                        email,
+                        status: 'success',
+                        message: 'User added as member'
+                    });
+                }
+                else {
+                    // Create invitation record
+                    await spaceInvitation_model_1.SpaceInvitation.create({
+                        spaceId,
+                        email,
+                        role,
+                        inviterId,
+                        status: 'pending',
+                        message
+                    });
+                    // Send invitation email
+                    await (0, email_util_1.sendInvitationEmail)({
+                        to: email,
+                        spaceName: space.name,
+                        inviterName: `${inviter.firstName} ${inviter.lastName}`,
+                        role,
+                        message,
+                        invitationLink: `${process.env.CLIENT_URL}/invitations/accept?space=${spaceId}&email=${encodeURIComponent(email)}`
+                    });
+                    results.push({
+                        email,
+                        status: 'success',
+                        message: 'Invitation sent'
+                    });
+                }
+            }
+            catch (error) {
+                console.error(`Error processing invitation for ${email}:`, error);
+                results.push({
+                    email,
+                    status: 'error',
+                    message: 'Failed to process invitation'
+                });
+            }
+        }
+        return results;
+    }
+    static async updateMemberRole(spaceId, userId, role) {
+        const spaceMember = await space_member_model_1.SpaceMember.findOne({
+            where: {
+                spaceId,
+                userId
+            }
+        });
+        if (!spaceMember) {
+            throw new errorHandler_1.AppError(404, 'Member not found in this space');
+        }
+        await spaceMember.update({ role });
     }
 }
 exports.SpaceService = SpaceService;

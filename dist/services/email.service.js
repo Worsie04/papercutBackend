@@ -59,6 +59,27 @@ class EmailService {
             html,
         });
     }
+    static async sendMagicLink(email, magicLink) {
+        const html = `
+      <h1>Sign in to Worsie</h1>
+      <p>Click the button below to sign in to your account:</p>
+      <a href="${magicLink}" style="
+        display: inline-block;
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+      ">Sign In</a>
+      <p>If you didn't request this sign-in link, you can safely ignore this email.</p>
+      <p>This link will expire in 24 hours.</p>
+    `;
+        await this.sendEmail({
+            to: email,
+            subject: 'Sign in to Worsie',
+            html,
+        });
+    }
 }
 exports.EmailService = EmailService;
 EmailService.transporter = nodemailer_1.default.createTransport({

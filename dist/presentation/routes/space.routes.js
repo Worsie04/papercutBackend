@@ -5,13 +5,16 @@ const space_controller_1 = require("../controllers/space.controller");
 const auth_middleware_1 = require("../middlewares/auth.middleware");
 const upload_middleware_1 = require("../middlewares/upload.middleware");
 const router = (0, express_1.Router)();
-router.use((0, auth_middleware_1.authenticate)('user'));
+router.use((0, auth_middleware_1.authenticate)(['user', 'admin', 'super_admin']));
 // Space routes 
 router.get('/', space_controller_1.SpaceController.getAllSpaces);
 router.get('/available-users', space_controller_1.SpaceController.getAvailableUsers);
 router.post('/', upload_middleware_1.upload.single('logo'), space_controller_1.SpaceController.createSpace);
 router.get('/:id', space_controller_1.SpaceController.getSpace);
+router.get('/:id/cabinets', space_controller_1.SpaceController.getCabinets);
 // Member management routes
+router.post('/:id/members/invite', space_controller_1.SpaceController.inviteMembers);
 router.post('/:id/members', space_controller_1.SpaceController.addMember);
 router.delete('/:id/members/:userId', space_controller_1.SpaceController.removeMember);
+router.patch('/:id/members/:userId/role', space_controller_1.SpaceController.updateMemberRole);
 exports.default = router;

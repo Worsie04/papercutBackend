@@ -7,20 +7,33 @@ const admin_model_1 = require("../../models/admin.model");
 const user_model_1 = require("../../models/user.model");
 const authenticate = (type) => {
     return async (req, res, next) => {
-        var _a, _b, _c;
+        var _a, _b;
         try {
             // Check for token in cookies or Authorization header
             const token = ((_a = req.cookies) === null || _a === void 0 ? void 0 : _a.access_token_w) || ((_b = req.headers.authorization) === null || _b === void 0 ? void 0 : _b.split(' ')[1]);
-            console.log('Cookie token:', (_c = req.cookies) === null || _c === void 0 ? void 0 : _c.access_token_w);
-            console.log('Auth header:', req.headers.authorization);
+            //console.log('Cookie token:', req.cookies?.access_token_w);
+            //console.log('Auth header:', req.headers.authorization);
             if (!token) {
                 throw new errorHandler_1.AppError(401, 'No token provided');
             }
-            console.log('Using token:', token);
+            //console.log('Using token:', token);
             const decoded = jwt_util_1.JwtUtil.verifyToken(token);
             console.log('Decoded token:', decoded);
-            if (type && decoded.type !== type) {
-                throw new errorHandler_1.AppError(403, 'Unauthorized access');
+            if (type) {
+                if (Array.isArray(type)) {
+                    // Check if user type or role matches any of the allowed types
+                    const hasValidType = type.some(t => decoded.type === t || decoded.role === t);
+                    console.log('hasValidType:', hasValidType);
+                    if (!hasValidType) {
+                        throw new errorHandler_1.AppError(403, 'Unauthorized access');
+                    }
+                }
+                else {
+                    // Single type check
+                    if (decoded.type !== type && decoded.role !== type) {
+                        throw new errorHandler_1.AppError(403, 'Unauthorized access');
+                    }
+                }
             }
             req.user = decoded;
             next();

@@ -1,5 +1,6 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { TwoFactorService } from '../../services/twoFactor.service';
+import { AuthenticatedRequest } from '../../types/express';
 
 export class TwoFactorController {
   private twoFactorService: TwoFactorService;
@@ -8,9 +9,14 @@ export class TwoFactorController {
     this.twoFactorService = TwoFactorService.getInstance();
   }
 
-  public setup = async (req: Request, res: Response): Promise<void> => {
+  public setup = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.user.id; // Assuming user is attached by auth middleware
+      if (!req.user?.id) {
+        res.status(401).json({ message: 'User not authenticated' });
+        return;
+      }
+
+      const userId = req.user.id;
       const { secret, qrCodeUrl } = await this.twoFactorService.generateSecret(userId);
       
       res.json({ secret, qrCodeUrl });
@@ -20,8 +26,13 @@ export class TwoFactorController {
     }
   };
 
-  public verify = async (req: Request, res: Response): Promise<void> => {
+  public verify = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      if (!req.user?.id) {
+        res.status(401).json({ message: 'User not authenticated' });
+        return;
+      }
+
       const userId = req.user.id;
       const { token } = req.body;
 
@@ -43,8 +54,13 @@ export class TwoFactorController {
     }
   };
 
-  public disable = async (req: Request, res: Response): Promise<void> => {
+  public disable = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      if (!req.user?.id) {
+        res.status(401).json({ message: 'User not authenticated' });
+        return;
+      }
+
       const userId = req.user.id;
       const { token } = req.body;
 
@@ -66,8 +82,13 @@ export class TwoFactorController {
     }
   };
 
-  public getStatus = async (req: Request, res: Response): Promise<void> => {
+  public getStatus = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      if (!req.user?.id) {
+        res.status(401).json({ message: 'User not authenticated' });
+        return;
+      }
+
       const userId = req.user.id;
       const status = await this.twoFactorService.getStatus(userId);
       

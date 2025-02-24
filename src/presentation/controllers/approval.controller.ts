@@ -50,9 +50,14 @@ export class ApprovalController {
     try {
       const { id } = req.params;
       const { type } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
 
       if (type === 'cabinet') {
-        await CabinetService.approveCabinet(id);
+        await CabinetService.approveCabinet(id, userId);
       } else if (type === 'space') {
         await SpaceService.approveSpace(id);
       } else {
@@ -70,9 +75,14 @@ export class ApprovalController {
     try {
       const { id } = req.params;
       const { type, reason } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
 
       if (type === 'cabinet') {
-        await CabinetService.rejectCabinet(id, reason);
+        await CabinetService.rejectCabinet(id, userId, reason);
       } else if (type === 'space') {
         await SpaceService.rejectSpace(id, reason);
       } else {

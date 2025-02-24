@@ -8,8 +8,8 @@ exports.config = void 0;
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 exports.config = {
-    nodeEnv: process.env.NODE_ENV || 'development',
-    port: parseInt(process.env.PORT || '5000', 10),
+    nodeEnv: process.env.NODE_ENV || 'production',
+    port: parseInt(process.env.PORT || '4000', 10), //4000 idi
     // Database
     database: {
         host: process.env.DB_HOST || 'localhost',
@@ -50,7 +50,7 @@ exports.config = {
     // Security
     security: {
         bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '10', 10),
-        rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
+        rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '9000000', 10), // 15 minutes
         rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
     },
 };

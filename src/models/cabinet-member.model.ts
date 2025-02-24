@@ -5,25 +5,24 @@ import { User } from './user.model';
 import { CabinetMemberPermission } from './cabinet-member-permission.model';
 
 export interface CabinetMemberPermissions {
-  role: string;
-  permissions: {
-    readRecords: boolean;
-    createRecords: boolean;
-    updateRecords: boolean;
-    deleteRecords: boolean;
-    manageCabinet: boolean;
-    downloadFiles: boolean;
-    exportTables: boolean;
-  };
+  readRecords: boolean;
+  createRecords: boolean;
+  updateRecords: boolean;
+  deleteRecords: boolean;
+  manageCabinet: boolean;
+  downloadFiles: boolean;
+  exportTables: boolean;
 }
 
 export class CabinetMember extends Model {
+  public id!: string;
   public cabinetId!: string;
   public userId!: string;
-  public role!: string;
+  public role!: 'owner' | 'member' | 'viewer';
   public permissions!: CabinetMemberPermissions;
   public createdAt!: Date;
   public updatedAt!: Date;
+  public deletedAt?: Date;
 
   // Associations
   public cabinet?: Cabinet;
@@ -33,47 +32,69 @@ export class CabinetMember extends Model {
 
 CabinetMember.init(
   {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
     cabinetId: {
       type: DataTypes.UUID,
-      primaryKey: true,
+      allowNull: false,
+      field: 'cabinet_id',
       references: {
         model: 'cabinets',
         key: 'id',
       },
-      onDelete: 'CASCADE',
-      field: 'cabinet_id',
     },
     userId: {
       type: DataTypes.UUID,
-      primaryKey: true,
+      allowNull: false,
+      field: 'user_id',
       references: {
         model: 'users',
         key: 'id',
       },
-      onDelete: 'CASCADE',
-      field: 'user_id',
     },
     role: {
-      type: DataTypes.STRING,
+      type: DataTypes.ENUM('owner', 'member', 'viewer'),
       allowNull: false,
       defaultValue: 'member',
     },
     permissions: {
       type: DataTypes.JSONB,
-      allowNull: true,
+      allowNull: false,
       defaultValue: {
-        canRead: true,
-        canWrite: false,
-        canDelete: false,
-        canShare: false,
+        readRecords: true,
+        createRecords: false,
+        updateRecords: false,
+        deleteRecords: false,
+        manageCabinet: false,
+        downloadFiles: true,
+        exportTables: false
       },
+    },
+    createdAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: 'created_at',
+    },
+    updatedAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: 'updated_at',
+    },
+    deletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'deleted_at',
     },
   },
   {
     sequelize,
-    tableName: 'cabinet_members',
     modelName: 'CabinetMember',
+    tableName: 'cabinet_members',
     underscored: true,
+    paranoid: true,
   }
 );
 

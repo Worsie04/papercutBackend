@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Admin = exports.AdminRole = void 0;
 const sequelize_1 = require("sequelize");
-const base_model_1 = require("./base.model");
 const sequelize_2 = require("../infrastructure/database/sequelize");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 var AdminRole;
@@ -14,10 +13,14 @@ var AdminRole;
     AdminRole["ADMIN"] = "admin";
     AdminRole["MODERATOR"] = "moderator";
 })(AdminRole || (exports.AdminRole = AdminRole = {}));
-class Admin extends base_model_1.BaseModel {
+class Admin extends sequelize_1.Model {
     // Helper methods
     async comparePassword(candidatePassword) {
-        return bcryptjs_1.default.compare(candidatePassword, this.password);
+        console.log('Comparing password...');
+        console.log('Stored hash:', this.password);
+        const result = await bcryptjs_1.default.compare(candidatePassword, this.password);
+        console.log('Password comparison result:', result);
+        return result;
     }
     getFullName() {
         return `${this.firstName} ${this.lastName}`;
@@ -32,56 +35,87 @@ class Admin extends base_model_1.BaseModel {
     }
 }
 exports.Admin = Admin;
-Admin.init(Object.assign(Object.assign({}, base_model_1.baseModelConfig), { email: {
+Admin.init({
+    id: {
+        type: sequelize_1.DataTypes.UUID,
+        defaultValue: sequelize_1.DataTypes.UUIDV4,
+        primaryKey: true,
+    },
+    firstName: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: false,
+        field: 'first_name',
+    },
+    lastName: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: false,
+        field: 'last_name',
+    },
+    email: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: false,
         unique: true,
         validate: {
             isEmail: true,
         },
-    }, password: {
+    },
+    password: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: false,
-    }, firstName: {
-        type: sequelize_1.DataTypes.STRING,
+    },
+    role: {
+        type: sequelize_1.DataTypes.ENUM('admin', 'super_admin'),
         allowNull: false,
-        field: 'first_name',
-    }, lastName: {
-        type: sequelize_1.DataTypes.STRING,
+        defaultValue: 'admin',
+    },
+    // status: {
+    //   type: DataTypes.ENUM('active', 'inactive'),
+    //   allowNull: false,
+    //   defaultValue: 'active',
+    // },
+    lastLoginAt: {
+        type: sequelize_1.DataTypes.DATE,
+        allowNull: true,
+        field: 'last_login_at',
+    },
+    createdAt: {
+        type: sequelize_1.DataTypes.DATE,
         allowNull: false,
-        field: 'last_name',
-    }, phone: {
+        field: 'created_at',
+    },
+    updatedAt: {
+        type: sequelize_1.DataTypes.DATE,
+        allowNull: false,
+        field: 'updated_at',
+    },
+    phone: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: true,
-    }, role: {
-        type: sequelize_1.DataTypes.ENUM(...Object.values(AdminRole)),
-        allowNull: false,
-        defaultValue: AdminRole.ADMIN,
-    }, permissions: {
+    },
+    permissions: {
         type: sequelize_1.DataTypes.ARRAY(sequelize_1.DataTypes.STRING),
         allowNull: false,
         defaultValue: [],
-    }, isActive: {
+    },
+    isActive: {
         type: sequelize_1.DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true,
         field: 'is_active',
-    }, lastLoginAt: {
-        type: sequelize_1.DataTypes.DATE,
-        allowNull: true,
-        field: 'last_login_at',
-    }, emailVerifiedAt: {
+    },
+    emailVerifiedAt: {
         type: sequelize_1.DataTypes.DATE,
         allowNull: true,
         field: 'email_verified_at',
-    }, avatar: {
+    },
+    avatar: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: true,
-    } }), {
+    },
+}, {
     sequelize: sequelize_2.sequelize,
     modelName: 'Admin',
     tableName: 'admins',
-    paranoid: true,
     hooks: {
         beforeSave: async (admin) => {
             if (admin.changed('password')) {

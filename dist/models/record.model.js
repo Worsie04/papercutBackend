@@ -121,3 +121,4 @@ Record.init(Object.assign(Object.assign({}, base_model_1.baseModelConfig), { tit
     tableName: 'records',
     paranoid: true,
 });
+// ... rest of the file ... 

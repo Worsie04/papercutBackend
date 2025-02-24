@@ -81,3 +81,4 @@ Cabinet.init(Object.assign(Object.assign({}, base_model_1.baseModelConfig), { na
     tableName: 'cabinets',
     paranoid: true,
 });
+exports.default = Cabinet;
