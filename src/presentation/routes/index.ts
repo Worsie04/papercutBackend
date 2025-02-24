@@ -6,7 +6,7 @@ import cabinetRoutes from './cabinet.routes';
 import cabinetMemberRoutes from './cabinet-member.routes';
 import approvalRoutes from './approval.routes';
 import recordRoutes from './record.routes';
-import organizationRoutes from './organization.routes';
+import worsieorganizationRoutes from './worsieorganization.routes';
 import roleRoutes from './role.routes';
 import groupRoutes from './group.routes';
 
@@ -23,7 +23,7 @@ router.use(`${API_VERSION}/cabinets`, cabinetRoutes);
 router.use(`${API_VERSION}/cabinet-members`, cabinetMemberRoutes);
 router.use(`${API_VERSION}/approvals`, approvalRoutes);
 router.use(`${API_VERSION}/records`, recordRoutes);
-router.use(`${API_VERSION}/organizations`, organizationRoutes);
+router.use(`${API_VERSION}/organizations`, worsieorganizationRoutes);
 router.use(`${API_VERSION}/roles`, roleRoutes);
 router.use(`${API_VERSION}/groups`, groupRoutes);
 
