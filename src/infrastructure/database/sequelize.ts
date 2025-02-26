@@ -38,9 +38,12 @@ export const initializeDatabase = async () => {
     await setupAssociations();
 
     // Sync models with database (in development only)
-    if (config.nodeEnv === 'production') {
-      await sequelize.sync({ alter: true });
+    if (config.nodeEnv === 'development') {
+      console.log('Running in development mode - syncing database models');
+      await sequelize.sync();
       console.log('Database models synchronized successfully.');
+    } else {
+      console.log(`Running in ${config.nodeEnv} mode - skipping automatic database sync`);
     }
 
     return models;
