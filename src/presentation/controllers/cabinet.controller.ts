@@ -166,4 +166,46 @@ export class CabinetController {
       next(error);
     }
   }
-} 
+
+  static async getMyCabinetsByStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { status } = req.query;
+      const userId = req.user?.id;
+      
+      if (!status || typeof status !== 'string') {
+        throw new AppError(400, 'Status parameter is required');
+      }
+      
+      if (!userId) {
+        throw new AppError(401, 'Unauthorized');
+      }
+      
+      const validStatuses = ['pending', 'approved', 'rejected'];
+      if (!validStatuses.includes(status)) {
+        throw new AppError(400, 'Invalid status. Must be one of: pending, approved, rejected');
+      }
+      
+      // Get cabinets created by the current user with the specified status
+      const cabinets = await CabinetService.getMyPendingApprovals(userId);
+      res.json(cabinets);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getCabinetsWaitingForMyApproval(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new AppError(401, 'Unauthorized');
+      }
+      
+      // Get cabinets waiting for this user's approval
+      const cabinets = await CabinetService.getApprovalsWaitingFor(userId);
+      res.json(cabinets);
+    } catch (error) {
+      next(error);
+    }
+  }
+}

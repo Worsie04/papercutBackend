@@ -1,6 +1,7 @@
 import { Organization } from './organization.model';
 import { User } from './user.model';
 import { OrganizationMember } from './organization-member.model';
+import { setupSpaceReassignmentAssociations } from './space-reassignment.model';
 
 export const setupAssociations = () => {
   // Set up associations for OrganizationMember
@@ -28,4 +29,7 @@ export const setupAssociations = () => {
     foreignKey: 'userId',
     as: 'organizationMemberships'
   });
-}; 
+  
+  // Set up associations for SpaceReassignment
+  setupSpaceReassignmentAssociations();
+};

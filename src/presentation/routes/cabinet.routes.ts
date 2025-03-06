@@ -13,6 +13,10 @@ router.use(authenticate('user'));
 router.post('/', CabinetController.createCabinet);
 router.get('/approved', CabinetController.getApprovedCabinets);
 router.get('/followedCabinets', cabinetFollowerController.getFollowedCabinets);
+// New endpoint for getting cabinets created by the current user with a specific status
+router.get('/my-cabinets', CabinetController.getMyCabinetsByStatus);
+// New endpoint for getting cabinets waiting for the current user's approval
+router.get('/waiting-for-my-approval', CabinetController.getCabinetsWaitingForMyApproval);
 router.get('/', CabinetController.getCabinets);
 router.post('/assign', CabinetController.assignCabinetsToUsers);
 router.post('/assign-with-permissions', CabinetController.assignUsersWithPermissions);
@@ -31,4 +35,4 @@ router.delete('/:cabinetId/follow', cabinetFollowerController.unfollowCabinet);
 router.get('/:cabinetId/follow', cabinetFollowerController.isFollowing);
 router.get('/:cabinetId/followers', cabinetFollowerController.getCabinetFollowers);
 
-export default router; 
+export default router;

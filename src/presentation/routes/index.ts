@@ -9,6 +9,7 @@ import recordRoutes from './record.routes';
 import worsieorganizationRoutes from './worsieorganization.routes';
 import roleRoutes from './role.routes';
 import groupRoutes from './group.routes';
+import notificationRoutes from './notification.routes';
 
 const router = Router();
 
@@ -26,10 +27,11 @@ router.use(`${API_VERSION}/records`, recordRoutes);
 router.use(`${API_VERSION}/organizations`, worsieorganizationRoutes);
 router.use(`${API_VERSION}/roles`, roleRoutes);
 router.use(`${API_VERSION}/groups`, groupRoutes);
+router.use(`${API_VERSION}/notifications`, notificationRoutes);
 
 // Health check endpoint
 router.get(`${API_VERSION}/health`, (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-export default router; 
+export default router;

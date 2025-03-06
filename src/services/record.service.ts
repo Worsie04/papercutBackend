@@ -1000,4 +1000,53 @@ export class RecordService {
       ]
     });
   }
+
+  static async getMyRecordsByStatus(status: string | string[], userId: string) {
+    // Get records created by the current user with specific status
+    const whereClause: any = {
+      status: Array.isArray(status) ? { [Op.in]: status } : status,
+      creatorId: userId // Only get records created by this user
+    };
+    
+    return Record.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: Cabinet,
+          as: 'cabinet',
+          attributes: ['id', 'name', 'description']
+        },
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+  }
+
+  static async getRecordsWaitingForMyApproval(userId: string) {
+    // Find records that are pending and have cabinets where this user is an approver
+    return Record.findAll({
+      where: {
+        status: RecordStatus.PENDING
+      },
+      include: [
+        {
+          model: Cabinet,
+          as: 'cabinet',
+          attributes: ['id', 'name', 'description', 'approvers'],
+          required: true,
+          where: sequelize.literal(`"cabinet"."approvers" @> '[{"userId": "${userId}"}]'`)
+        },
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+  }
 }

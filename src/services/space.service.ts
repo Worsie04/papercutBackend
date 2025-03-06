@@ -1,4 +1,4 @@
-import { Transaction } from 'sequelize';
+import { Transaction, QueryTypes } from 'sequelize';
 import { Space, SpaceType } from '../models/space.model';
 import { User } from '../models/user.model';
 import { AppError } from '../presentation/middlewares/errorHandler';
@@ -8,6 +8,11 @@ import { SpaceInvitation } from '../models/spaceInvitation.model';
 import { sendInvitationEmail } from '../utils/email.util';
 import { SpaceMember } from '../models/space-member.model';
 import { Cabinet } from '../models/cabinet.model';
+import { OrganizationMember } from '../models/organization-member.model';
+import { SpaceCommentService } from './space-comment.service';
+import { SpaceReassignment } from '../models/space-reassignment.model';
+import { Record as RecordModel } from '../models/record.model';
+import { NotificationService } from './notification.service';
 
 interface CreateSpaceParams {
   name: string;
@@ -19,6 +24,7 @@ interface CreateSpaceParams {
   description?: string;
   logo?: any;
   requireApproval: boolean;
+  approvers?: Array<{userId: string, order: number}>;
   ownerId: string;
 }
 
@@ -42,6 +48,36 @@ export class SpaceService {
       attributes: ['id', 'firstName', 'lastName', 'email'],
     });
     return users;
+  }
+
+  static async getSuperUsers() {
+    try {
+      // Find organization members with super_user role
+      const organizationMembers = await OrganizationMember.findAll({
+        where: { role: 'super_user' },
+        include: [{
+          model: User,
+          as: 'user',
+          attributes: ['id', 'firstName', 'lastName', 'email']
+        }]
+      });
+
+      // Transform the data to match the User interface
+      const superUsers = organizationMembers.map(member => {
+        const user = (member as any).user;
+        return {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email
+        };
+      });
+
+      return superUsers;
+    } catch (error) {
+      console.error('Error fetching super users:', error);
+      throw error;
+    }
   }
 
   static async createSpace(data: CreateSpaceParams): Promise<Space> {
@@ -69,6 +105,7 @@ export class SpaceService {
           country: data.country,
           logo: logoUrl,
           requireApproval: data.requireApproval,
+          approvers: data.requireApproval && Array.isArray(data.approvers) ? data.approvers : [],
           description: data.description,
           type: SpaceType.CORPORATE,
           ownerId: data.ownerId,
@@ -133,7 +170,11 @@ export class SpaceService {
         {
           model: User,
           as: 'createdBy',
-        }
+        },
+        {
+          model: User,
+          as: 'rejector',
+        },
       ],
     });
 
@@ -192,6 +233,44 @@ export class SpaceService {
 
   static async getAllSpaces(): Promise<Space[]> {
     const spaces = await Space.findAll({
+      where: {
+        status: 'approved'
+      },
+      include: [
+        {
+          model: User,
+          as: 'spaceMembers',
+          through: { attributes: ['role', 'permissions'] },
+        },
+        {
+          model: User,
+          as: 'owner',
+        },
+        {
+          model: User,
+          as: 'createdBy',
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+    });
+
+    // Transform each space to maintain backward compatibility
+    return spaces.map(space => {
+      const transformedSpace = space.toJSON();
+      transformedSpace.members = transformedSpace.spaceMembers.map((member: any) => ({
+        ...member,
+        role: member.SpaceMember?.role || 'member'
+      }));
+      delete transformedSpace.spaceMembers;
+      return transformedSpace;
+    });
+  }
+
+  static async getSpacesByStatus(status: string): Promise<Space[]> {
+    const spaces = await Space.findAll({
+      where: {
+        status
+      },
       include: [
         {
           model: User,
@@ -272,7 +351,7 @@ export class SpaceService {
     }
   }
 
-  static async rejectSpace(spaceId: string, reason: string) {
+  static async rejectSpace(spaceId: string, reason: string, rejectedBy: string) {
     try {
       const space = await Space.findByPk(spaceId);
       if (!space) {
@@ -281,11 +360,41 @@ export class SpaceService {
 
       await space.update({ 
         status: 'rejected',
-        rejectionReason: reason
+        rejectionReason: reason,
+        rejectedBy
       });
       return space;
     } catch (error) {
       console.error('Error rejecting space:', error);
+      throw error;
+    }
+  }
+
+  static async resubmitSpace(spaceId: string, message: string, userId: string) {
+    try {
+      const space = await Space.findByPk(spaceId);
+      if (!space) {
+        throw new Error('Space not found');
+      }
+
+      // Change status back to pending
+      await space.update({ 
+        status: 'pending',
+        rejectionReason: null,
+        rejectedBy: null
+      });
+      
+      // Add a comment about the resubmission
+      await SpaceCommentService.createComment({
+        spaceId,
+        userId,
+        message: message || 'Space resubmitted for approval.',
+        type: 'update'
+      });
+      
+      return space;
+    } catch (error) {
+      console.error('Error resubmitting space:', error);
       throw error;
     }
   }
@@ -397,4 +506,443 @@ export class SpaceService {
     await spaceMember.update({ role });
   }
 
-} 
+  static async getMyPendingApprovals(userId: string) {
+    try {
+      console.log('Fetching spaces created by user that are pending approval:', userId);
+      
+      // Find spaces where:
+      // 1. The space requires approval
+      // 2. The space status is pending
+      // 3. The space was created by the current user
+      const pendingSpaces = await Space.findAll({
+        where: {
+          status: 'pending',
+          requireApproval: true,
+          createdById: userId
+        },
+        include: [{
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'firstName', 'lastName', 'avatar']
+        }],
+        order: [['createdAt', 'DESC']]
+      });
+      
+      console.log('Found pending spaces created by this user:', pendingSpaces.length);
+      
+      return pendingSpaces.map((space: any) => ({
+        id: space.id,
+        name: space.name,
+        status: space.status,
+        createdAt: space.createdAt,
+        updatedAt: space.updatedAt,
+        owner: {
+          firstName: space.owner?.firstName || 'Unknown',
+          lastName: space.owner?.lastName || 'User',
+          avatar: space.owner?.avatar || null
+        }
+      }));
+    } catch (error) {
+      console.error('Error fetching my pending space approvals:', error);
+      throw error;
+    }
+  }
+
+  static async getApprovalsWaitingFor(userId: string) {
+    try {
+      console.log('Fetching spaces waiting for approval by user:', userId);
+      
+      // Find spaces where:
+      // 1. The space requires approval
+      // 2. The space status is pending
+      // 3. The user is in the approvers list
+      const pendingSpaces = await Space.findAll({
+        where: {
+          status: 'pending',
+          requireApproval: true,
+        },
+        include: [{
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'firstName', 'lastName', 'avatar']
+        }],
+        order: [['createdAt', 'DESC']]
+      });
+      
+      // Filter spaces where the current user is in the approvers list
+      const spacesWaitingForApproval = pendingSpaces.filter(space => {
+        if (!space.approvers) return false;
+        
+        // Check if the user is in the approvers array
+        return space.approvers.some((approver: {userId: string, order: number}) => 
+          approver.userId === userId
+        );
+      });
+      
+      console.log('Found spaces waiting for approval by this user:', spacesWaitingForApproval.length);
+      
+      return spacesWaitingForApproval.map((space: any) => {
+        // Log the space object to debug
+        console.log('Space object:', JSON.stringify(space, null, 2));
+        
+        return {
+          id: space.id,
+          name: space.name,
+          status: space.status,
+          createdAt: space.createdAt,
+          updatedAt: space.updatedAt,
+          owner: space.owner ? {
+            firstName: space.owner.firstName,
+            lastName: space.owner.lastName,
+            avatar: space.owner.avatar
+          } : undefined
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching spaces waiting for approval:', error);
+      throw error;
+    }
+  }
+
+  static async reassignApproval(
+    spaceId: string, 
+    currentUserId: string, 
+    assigneeId: string, 
+    message?: string
+  ): Promise<void> {
+    try {
+      console.log(`Reassigning approval for space ${spaceId} from user ${currentUserId} to user ${assigneeId}`);
+      
+      // 1. Verify the space exists
+      const space = await Space.findByPk(spaceId);
+      if (!space) {
+        throw new Error('Space not found');
+      }
+      
+      // 2. Verify the space is in pending status
+      if (space.status !== 'pending') {
+        throw new Error('Only pending spaces can be reassigned');
+      }
+      
+      // 3. Verify current user exists
+      const currentUser = await User.findByPk(currentUserId);
+      if (!currentUser) {
+        throw new Error('Current user not found');
+      }
+      
+      // 4. Get the current user's organization
+      const userOrganizations = await OrganizationMember.findAll({
+        where: {
+          userId: currentUserId,
+          status: 'active'
+        }
+      });
+      
+      if (!userOrganizations || userOrganizations.length === 0) {
+        throw new Error('User is not a member of any organization');
+      }
+      
+      const organizationIds = userOrganizations.map((org: any) => org.organizationId);
+      
+      // 5. Verify the assignee is a super user in the same organization
+      const assigneeOrganizationMemberships = await OrganizationMember.findAll({
+        where: {
+          userId: assigneeId,
+          organizationId: organizationIds,
+          role: 'super_user',
+          status: 'active'
+        }
+      });
+      
+      if (!assigneeOrganizationMemberships || assigneeOrganizationMemberships.length === 0) {
+        throw new Error('Assignee is not a super user in your organization');
+      }
+      
+      // Get the Sequelize transaction to ensure atomicity
+      const transaction = await sequelize.transaction();
+      
+      try {
+        // 6. Update the space's approvers array
+        // Get current approvers array or initialize empty array if not present
+        const currentApprovers = space.approvers || [];
+        
+        // Create new approvers array with the new assignee
+        let updatedApprovers;
+        
+        if (Array.isArray(currentApprovers)) {
+          // Replace the user with the new assignee while maintaining order
+          updatedApprovers = currentApprovers.map(approver => {
+            if (approver.userId === currentUserId) {
+              return { ...approver, userId: assigneeId };
+            }
+            return approver;
+          });
+          
+          // If the current user wasn't in the approvers list, add the assignee
+          if (!currentApprovers.some(approver => approver.userId === currentUserId)) {
+            updatedApprovers.push({ userId: assigneeId, order: currentApprovers.length + 1 });
+          }
+        } else {
+          // If approvers isn't an array, create a new one with the assignee
+          updatedApprovers = [{ userId: assigneeId, order: 1 }];
+        }
+        
+        // Update the space with the new approvers array
+        await space.update({ approvers: updatedApprovers }, { transaction });
+        
+        // 7. Create a record in the SpaceReassignment table to track history
+        await SpaceReassignment.create({
+          spaceId: spaceId,
+          fromUserId: currentUserId,
+          toUserId: assigneeId,
+          message: message || 'Approval reassigned'
+        }, { transaction });
+        
+        // Commit the transaction if all operations succeed
+        await transaction.commit();
+        
+        // 8. Log the reassignment
+        console.log(`Successfully reassigned approval for space ${spaceId} to user ${assigneeId}`);
+        console.log(`Updated approvers:`, JSON.stringify(updatedApprovers, null, 2));
+        
+        // 9. Log space activity (simplified)
+        console.log(`Activity logged for space ${spaceId}: reassign - Reassigned approval to another user`);
+      } catch (error) {
+        // Rollback the transaction if any operation fails
+        await transaction.rollback();
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error reassigning space approval:', error);
+      throw error;
+    }
+  }
+
+  static async getReassignmentHistory(spaceId: string): Promise<any[]> {
+    try {
+      const reassignments = await SpaceReassignment.findAll({
+        where: { spaceId },
+        include: [
+          {
+            model: User,
+            as: 'fromUser',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
+          },
+          {
+            model: User,
+            as: 'toUser',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
+          }
+        ],
+        order: [['createdAt', 'DESC']]
+      });
+      
+      return reassignments.map(item => ({
+        id: item.id,
+        spaceId: item.spaceId,
+        fromUser: item.fromUser,
+        toUser: item.toUser,
+        message: item.message,
+        createdAt: item.createdAt
+      }));
+    } catch (error) {
+      console.error('Error fetching space reassignment history:', error);
+      throw error;
+    }
+  }
+
+  static async getMySpacesByStatus(userId: string, status: string) {
+    try {
+      console.log(`Fetching spaces created by user with status ${status}:`, userId);
+      
+      // Find spaces where:
+      // 1. The space has the specified status
+      // 2. The space was created by the current user
+      const spaces = await Space.findAll({
+        where: {
+          status,
+          createdById: userId
+        },
+        include: [{
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'firstName', 'lastName', 'avatar']
+        }],
+        order: [['createdAt', 'DESC']]
+      });
+      
+      console.log(`Found ${spaces.length} spaces with status ${status} created by this user`);
+      
+      // Log the first space to debug
+      if (spaces.length > 0) {
+        console.log('First space example:', JSON.stringify(spaces[0], null, 2));
+      }
+      
+      return spaces.map((space: any) => {
+        // Ensure we have valid owner data
+        const ownerData = space.owner ? {
+          firstName: space.owner.firstName || 'Unknown',
+          lastName: space.owner.lastName || 'User',
+          avatar: space.owner.avatar || null
+        } : {
+          firstName: 'Unknown',
+          lastName: 'User',
+          avatar: null
+        };
+        
+        return {
+          id: space.id,
+          name: space.name || 'Unnamed Space',
+          status: space.status,
+          createdAt: space.createdAt,
+          updatedAt: space.updatedAt,
+          owner: ownerData
+        };
+      });
+    } catch (error) {
+      console.error(`Error fetching spaces with status ${status}:`, error);
+      throw error;
+    }
+  }
+
+  static async deleteSpace(spaceId: string, userId: string): Promise<boolean> {
+    try {
+      console.log(`Attempting to delete space ${spaceId} by user ${userId}`);
+      
+      // 1. Verify the space exists
+      const space = await Space.findByPk(spaceId);
+      if (!space) {
+        throw new Error('Space not found');
+      }
+      
+      // 2. Verify user has permission to delete the space
+      // Only allow super users or the space owner to delete
+      const userOrganizations = await OrganizationMember.findAll({
+        where: {
+          userId,
+          status: 'active',
+          role: 'super_user'
+        }
+      });
+      
+      const isSuperUser = userOrganizations.length > 0;
+      const isOwner = space.ownerId === userId;
+      
+      if (!isSuperUser && !isOwner) {
+        throw new Error('You do not have permission to delete this space');
+      }
+      
+      // 3. Delete all related records using a transaction
+      const transaction = await sequelize.transaction();
+      
+      try {
+        // Delete space members
+        await SpaceMember.destroy({
+          where: { spaceId },
+          transaction
+        });
+        
+        // Delete space reassignments
+        await SpaceReassignment.destroy({
+          where: { spaceId },
+          transaction
+        });
+        
+        // Delete space invitations
+        await SpaceInvitation.destroy({
+          where: { spaceId },
+          transaction
+        });
+        
+        // Delete space comments - using the correct table name space_comments_rejects
+        await sequelize.query(
+          `DELETE FROM space_comments_rejects WHERE "space_id" = :spaceId`,
+          { 
+            replacements: { spaceId },
+            type: QueryTypes.DELETE,
+            transaction
+          }
+        );
+        
+        // Delete any cabinets in the space
+        const cabinets = await Cabinet.findAll({
+          where: { spaceId },
+          transaction
+        });
+        
+        for (const cabinet of cabinets) {
+          // Delete cabinet members
+          await sequelize.query(
+            `DELETE FROM cabinet_members WHERE "cabinetId" = :cabinetId`,
+            { 
+              replacements: { cabinetId: cabinet.id },
+              type: QueryTypes.DELETE,
+              transaction
+            }
+          );
+          
+          // Delete cabinet followers
+          await sequelize.query(
+            `DELETE FROM cabinet_followers WHERE "cabinetId" = :cabinetId`,
+            { 
+              replacements: { cabinetId: cabinet.id },
+              type: QueryTypes.DELETE,
+              transaction
+            }
+          );
+          
+          // Delete records in the cabinet
+          const records = await RecordModel.findAll({
+            where: { cabinetId: cabinet.id },
+            transaction
+          });
+          
+          for (const record of records) {
+            // Delete record versions
+            await sequelize.query(
+              `DELETE FROM record_versions WHERE "recordId" = :recordId`,
+              { 
+                replacements: { recordId: record.id },
+                type: QueryTypes.DELETE,
+                transaction
+              }
+            );
+            
+            // Delete record notes/comments
+            await sequelize.query(
+              `DELETE FROM record_notes WHERE "recordId" = :recordId`,
+              { 
+                replacements: { recordId: record.id },
+                type: QueryTypes.DELETE,
+                transaction
+              }
+            );
+            
+            // Delete the record itself
+            await record.destroy({ transaction });
+          }
+          
+          // Delete the cabinet
+          await cabinet.destroy({ transaction });
+        }
+        
+        // Finally, delete the space
+        await space.destroy({ transaction });
+        
+        // Commit the transaction
+        await transaction.commit();
+        
+        console.log(`Successfully deleted space ${spaceId}`);
+        return true;
+      } catch (error) {
+        // Rollback the transaction if any operation fails
+        await transaction.rollback();
+        console.error('Error during space deletion:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error deleting space:', error);
+      throw error;
+    }
+  }
+}

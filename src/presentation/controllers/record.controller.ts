@@ -498,4 +498,64 @@ export class RecordController {
       }
     }
   }
-} 
+
+  static async getMyRecordsByStatus(req: Request, res: Response) {
+    try {
+      const { status } = req.query;
+      const creatorId = req.user?.id;
+      
+      if (!status) {
+        return res.status(400).json({ error: 'Status is required' });
+      }
+      
+      if (!creatorId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      
+      // Handle comma-separated status values and ensure they're strings
+      const statusValues = (typeof status === 'string' ? status.split(',') : [status.toString()])
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+      
+      // Validate status values
+      const validStatuses = Object.values(RecordStatus);
+      const invalidStatuses = statusValues.filter(s => !validStatuses.includes(s as RecordStatus));
+      
+      if (invalidStatuses.length > 0) {
+        return res.status(400).json({ error: `Invalid status values: ${invalidStatuses.join(', ')}` });
+      }
+      
+      // Get records created by the current user with the specified status
+      const records = await RecordService.getMyRecordsByStatus(statusValues, creatorId);
+      res.json(records);
+    } catch (error) {
+      console.error('Error getting my records by status:', error);
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Failed to get my records' });
+      }
+    }
+  }
+
+  static async getRecordsWaitingForMyApproval(req: Request, res: Response) {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      
+      // Get records waiting for this user's approval
+      const records = await RecordService.getRecordsWaitingForMyApproval(userId);
+      res.json(records);
+    } catch (error) {
+      console.error('Error getting records waiting for approval:', error);
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Failed to get records waiting for approval' });
+      }
+    }
+  }
+}

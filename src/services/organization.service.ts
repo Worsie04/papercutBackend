@@ -6,6 +6,7 @@ import { Op, Sequelize } from 'sequelize';
 import { OrganizationMemberService } from './organization-member.service';
 
 export class OrganizationService {
+  
   static async createOrganization(data: {
     name: string;
     type: 'Personal' | 'Corporate';

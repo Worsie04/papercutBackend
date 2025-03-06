@@ -151,4 +151,15 @@ export function setupAssociations() {
     foreignKey: 'createdById',
     as: 'createdBy'
   });
+  
+  // Space Rejector Association
+  Space.belongsTo(User, {
+    foreignKey: 'rejectedBy',
+    as: 'rejector'
+  });
+  
+  User.hasMany(Space, {
+    foreignKey: 'rejectedBy',
+    as: 'rejectedSpaces'
+  });
 } 

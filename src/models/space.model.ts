@@ -19,6 +19,7 @@ export class Space extends BaseModel {
   public country!: string;
   public logo?: string;
   public requireApproval!: boolean;
+  public approvers?: Array<{userId: string, order: number}>;
   public settings!: any;
   public metadata?: any;
   public storageQuota!: number;
@@ -26,10 +27,13 @@ export class Space extends BaseModel {
   public isActive!: boolean;
   public status!: 'pending' | 'approved' | 'rejected';
   public rejectionReason?: string;
+  public rejectedBy?: string;
 
   // Association methods
   public readonly members?: User[];
   public readonly owner?: User;
+  public readonly createdBy?: User;
+  public readonly rejector?: User;
   public addMember!: (user: User, options?: any) => Promise<void>;
   public removeMember!: (userId: string) => Promise<boolean>;
 }
@@ -91,6 +95,11 @@ Space.init(
       defaultValue: false,
       field: 'require_approval',
     },
+    approvers: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: [],
+    },
     settings: {
       type: DataTypes.JSONB,
       allowNull: false,
@@ -127,6 +136,15 @@ Space.init(
       type: DataTypes.TEXT,
       allowNull: true,
       field: 'rejection_reason',
+    },
+    rejectedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+      field: 'rejected_by',
     },
   },
   {

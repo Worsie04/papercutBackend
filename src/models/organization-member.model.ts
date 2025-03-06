@@ -133,6 +133,7 @@ OrganizationMember.init(
     tableName: 'organization_members',
     underscored: true,
   }
+
 );
 
 export function setupOrganizationMemberAssociations(): void {

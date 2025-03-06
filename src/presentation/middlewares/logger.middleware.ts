@@ -4,7 +4,7 @@ import { config } from '../../config';
 
 // Create Winston logger
 const logger = winston.createLogger({
-  level: config.nodeEnv === 'development' ? 'debug' : 'info',
+  level: config.nodeEnv === 'development' ? 'info' : 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
@@ -35,6 +35,12 @@ const logger = winston.createLogger({
 
 // Request logging middleware
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
+  // In development mode, only log errors and important events
+  if (config.nodeEnv === 'development') {
+    // Skip logging for regular requests in development
+    return next();
+  }
+  
   const start = Date.now();
 
   // Log request

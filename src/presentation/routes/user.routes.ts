@@ -11,11 +11,13 @@ const twoFactorController = new TwoFactorController();
 
 // Current user routes (only require authentication)
 router.get('/me', authenticate(), UserController.getCurrentUser);
+router.get('/me/checkAllTables', authenticate(), UserController.getUserWithRelatedData);
 router.put('/me', authenticate(), validate(updateProfileSchema), UserController.updateProfile);
 router.put('/me/password', authenticate(), validate(updatePasswordSchema), UserController.updatePassword);
 
 // List users for frontend
 router.get('/list', authenticate(), UserController.getUsers);
+router.get('/superusers', authenticate(), UserController.getSuperUsers);
 
 // Admin routes (require admin role)
 router.get('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getUsers);

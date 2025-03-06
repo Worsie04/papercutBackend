@@ -19,7 +19,10 @@ export class SpaceController {
         tags: req.body.tags ? JSON.parse(req.body.tags) : [],
         users: req.body.users ? JSON.parse(req.body.users) : [],
         requireApproval: req.body.requireApproval === 'true',
+        approvers: req.body.approvers ? JSON.parse(req.body.approvers) : [],
       };
+
+      console.log('Parsed approvers:', body.approvers);
 
       const space = await SpaceService.createSpace({
         ...body,
@@ -74,9 +77,38 @@ export class SpaceController {
     }
   }
 
+  static async getSuperUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const superUsers = await SpaceService.getSuperUsers();
+      res.json(superUsers);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getAllSpaces(req: Request, res: Response, next: NextFunction) {
     try {
       const spaces = await SpaceService.getAllSpaces();
+      res.json(spaces);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getSpacesByStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { status } = req.query;
+      
+      if (!status || typeof status !== 'string') {
+        throw new AppError(400, 'Status parameter is required');
+      }
+
+      const validStatuses = ['pending', 'approved', 'rejected'];
+      if (!validStatuses.includes(status)) {
+        throw new AppError(400, 'Invalid status. Must be one of: pending, approved, rejected');
+      }
+
+      const spaces = await SpaceService.getSpacesByStatus(status);
       res.json(spaces);
     } catch (error) {
       next(error);
@@ -201,4 +233,111 @@ export class SpaceController {
       next(error);
     }
   }
-} 
+
+  static async getMySpacesByStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { status } = req.query;
+      const userId = req.user?.id;
+      
+      if (!status || typeof status !== 'string') {
+        throw new AppError(400, 'Status parameter is required');
+      }
+      
+      if (!userId) {
+        throw new AppError(401, 'Unauthorized');
+      }
+      
+      const validStatuses = ['pending', 'approved', 'rejected'];
+      if (!validStatuses.includes(status)) {
+        throw new AppError(400, 'Invalid status. Must be one of: pending, approved, rejected');
+      }
+      
+      // Get spaces created by the current user with the specified status
+      const spaces = await SpaceService.getMySpacesByStatus(userId, status);
+      res.json(spaces);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getSpacesWaitingForMyApproval(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new AppError(401, 'Unauthorized');
+      }
+      
+      // Get spaces waiting for this user's approval
+      const spaces = await SpaceService.getApprovalsWaitingFor(userId);
+      res.json(spaces);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async reassignApproval(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id: spaceId } = req.params;
+      const { assigneeId, message } = req.body;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new AppError(401, 'Unauthorized');
+      }
+
+      await SpaceService.reassignApproval(spaceId, userId, assigneeId, message);
+      res.status(200).json({ message: 'Approval reassigned successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async resubmitSpace(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const { message } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        throw new AppError(401, 'Unauthorized');
+      }
+
+      const space = await SpaceService.resubmitSpace(id, message, userId);
+      res.status(200).json({ message: 'Space resubmitted successfully', space });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getReassignmentHistory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id: spaceId } = req.params;
+      
+      if (!req.user?.id) {
+        throw new AppError(401, 'Unauthorized');
+      }
+
+      const reassignmentHistory = await SpaceService.getReassignmentHistory(spaceId);
+      res.status(200).json(reassignmentHistory);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deleteSpace(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id: spaceId } = req.params;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new AppError(401, 'Unauthorized');
+      }
+
+      await SpaceService.deleteSpace(spaceId, userId);
+      res.status(200).json({ message: 'Space deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+}

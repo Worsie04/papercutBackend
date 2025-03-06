@@ -9,6 +9,9 @@ import { OrganizationMemberService } from './organization-member.service';
 import { CabinetMember } from '../models/cabinet-member.model';
 import { Cabinet } from '../models/cabinet.model';
 import { CabinetMemberPermission } from '../models/cabinet-member-permission.model';
+import { OrganizationService } from './organization.service';
+import { GroupService } from './group.service';
+import { OrganizationMember } from '../models/organization-member.model';
 
 interface GetUsersParams {
   page: number;
@@ -67,6 +70,49 @@ export class UserService {
       page,
       totalPages: Math.ceil(count / limit),
     };
+  }
+
+  static async getSuperUsers(userId: string): Promise<User[]> {
+    // Find the organizations the current user belongs to
+    const userOrganizations = await OrganizationMember.findAll({
+      where: {
+        userId: userId,
+        status: 'active'
+      },
+      attributes: ['organizationId']
+    });
+    
+    if (!userOrganizations || userOrganizations.length === 0) {
+      return [];
+    }
+    
+    // Extract organization IDs
+    const organizationIds = userOrganizations.map((org: any) => org.organizationId);
+    
+    // Find all organization members with 'super_user' role in these organizations
+    const superUserMembers = await OrganizationMember.findAll({
+      where: {
+        organizationId: organizationIds,
+        role: 'super_user',
+        status: 'active'
+      },
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
+      }]
+    });
+    
+    // Extract and return the user objects
+    // Use type assertion and get() to safely extract the user objects
+    const superUsers = superUserMembers
+      .map((member: any) => {
+        const memberData = member.get({ plain: true });
+        return memberData.user;
+      })
+      .filter((user: any) => user !== null && user !== undefined);
+    
+    return superUsers;
   }
 
   static async getUser(id: string): Promise<User> {
@@ -282,5 +328,76 @@ export class UserService {
       role: member.memberPermissions?.role,
       permissions: member.memberPermissions?.permissions
     }));
+  }
+
+  static async getUserWithRelatedData(userId: string, includeParams: string[] = []) {
+    // Get basic user data
+    const user = await this.getUser(userId);
+    
+    // Initialize result object
+    const result: any = {
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        avatar: user.avatar
+      }
+    };
+    
+    // Check if user is a super_user
+    let isSuperUser = false;
+    
+    // First check organization_members table
+    const organizations = await OrganizationService.findDomainByUserId(userId);
+    result.organization = organizations;
+    
+    if (organizations && organizations.length > 0) {
+      // Check if user has super_user role in any organization
+      
+        const members = await OrganizationMemberService.getOrganizationMembers(organizations);
+        
+        const userMember = members.find(member => member.userId === userId);
+        
+        if (userMember && userMember.role === 'super_user') {
+          isSuperUser = true;
+        }
+    }
+    
+    // If not found in organization_members, check user_roles
+    if (!isSuperUser) {
+      const userRoles = await user.getRoles();
+      const hasSuperUserRole = userRoles.some(role => 
+        ['super_user', 'admin', 'system_admin'].includes(role.name)
+      );
+      
+      if (hasSuperUserRole) {
+        isSuperUser = true;
+      }
+    }
+    
+    result.isSuperUser = isSuperUser;
+    
+    // Include additional data based on query parameters
+    if (includeParams.includes('organizations')) {
+      result.organization = organizations;
+    }
+    
+    if (includeParams.includes('groups')) {
+      const groups = await GroupService.getGroupsByUserId(userId);
+      result.groups = groups;
+    }
+    
+    if (includeParams.includes('cabinets')) {
+      const cabinets = await this.getUserCabinets(userId);
+      result.cabinets = cabinets;
+    }
+    
+    if (includeParams.includes('roles')) {
+      const roles = await user.getRoles();
+      result.roles = roles;
+    }
+    console.log("Result:", result);
+    return result;
   }
 }

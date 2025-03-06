@@ -5,6 +5,8 @@ import { EmailService } from '../../services/email.service';
 import bcrypt from 'bcryptjs';
 import { CabinetService } from '../../services/cabinet.service';
 import { GroupService } from '../../services/group.service';
+import { OrganizationMemberService } from '../../services/organization-member.service';
+import { OrganizationService } from '../../services/organization.service';
 
 interface CreateUserRequest {
   email: string;
@@ -47,6 +49,19 @@ export class UserController {
         sortOrder: sortOrder as 'asc' | 'desc',
       });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getSuperUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Get the current user's ID from the authenticated request
+      const authenticatedReq = req as AuthenticatedRequest;
+      const userId = authenticatedReq.user.id;
+      
+      const superUsers = await UserService.getSuperUsers(userId);
+      res.json(superUsers);
     } catch (error) {
       next(error);
     }
@@ -128,6 +143,19 @@ export class UserController {
       const userId = (req as AuthenticatedRequest).user.id;
       const user = await UserService.getUser(userId);
       res.json(user);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getUserWithRelatedData(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as AuthenticatedRequest).user.id;
+      const includeParams = req.query.include ? (req.query.include as string).split(',') : [];
+      
+      const result = await UserService.getUserWithRelatedData(userId, includeParams);
+      
+      res.json(result);
     } catch (error) {
       next(error);
     }

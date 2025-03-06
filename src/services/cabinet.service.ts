@@ -157,6 +157,100 @@ export class CabinetService {
     }
   }
 
+  static async getMyPendingApprovals(userId: string) {
+    try {
+      console.log('Fetching my pending cabinet approvals for user:', userId);
+      const pendingCabinets = await Cabinet.findAll({
+        where: {
+          status: 'pending',
+          createdById: userId  // Only get cabinets created by this user
+        },
+        order: [['createdAt', 'DESC']]
+      });
+      
+      console.log('Found my pending cabinets:', pendingCabinets.length);
+      
+      const cabinetPromises = pendingCabinets.map(async (cabinet: any) => {
+        const createdBy = await User.findByPk(cabinet.createdById, {
+          attributes: ['id', 'firstName', 'lastName', 'avatar']
+        });
+        
+        return {
+          id: cabinet.id,
+          name: cabinet.name,
+          type: 'cabinet',
+          createdBy: createdBy ? {
+            id: createdBy.id,
+            name: `${createdBy.firstName} ${createdBy.lastName}`,
+            avatar: createdBy.avatar || '/images/avatar.png'
+          } : {
+            id: 'unknown',
+            name: 'Unknown User',
+            avatar: '/images/avatar.png'
+          },
+          createdAt: cabinet.createdAt,
+          priority: 'Med'
+        };
+      });
+      
+      return Promise.all(cabinetPromises);
+    } catch (error) {
+      console.error('Error fetching my pending cabinet approvals:', error);
+      throw error;
+    }
+  }
+
+  static async getApprovalsWaitingFor(userId: string) {
+    try {
+      console.log('Fetching cabinets waiting for approval by user:', userId);
+      
+      // Find cabinets where this user is listed as an approver
+      const pendingCabinets = await Cabinet.findAll({
+        where: {
+          status: 'pending',
+          // Using a raw query via sequelize.literal to search in the JSONB array
+          [Op.and]: [
+            sequelize.literal(`EXISTS(
+              SELECT 1 FROM jsonb_array_elements("approvers") AS approver
+              WHERE approver->>'userId' = '${userId}'
+            )`)
+          ]
+        },
+        order: [['createdAt', 'DESC']]
+      });
+      
+      console.log('Found cabinets waiting for approval:', pendingCabinets.length);
+      
+      const cabinetPromises = pendingCabinets.map(async (cabinet: any) => {
+        const createdBy = await User.findByPk(cabinet.createdById, {
+          attributes: ['id', 'firstName', 'lastName', 'avatar']
+        });
+        
+        return {
+          id: cabinet.id,
+          name: cabinet.name,
+          type: 'cabinet',
+          createdBy: createdBy ? {
+            id: createdBy.id,
+            name: `${createdBy.firstName} ${createdBy.lastName}`,
+            avatar: createdBy.avatar || '/images/avatar.png'
+          } : {
+            id: 'unknown',
+            name: 'Unknown User',
+            avatar: '/images/avatar.png'
+          },
+          createdAt: cabinet.createdAt,
+          priority: 'Med'
+        };
+      });
+      
+      return Promise.all(cabinetPromises);
+    } catch (error) {
+      console.error('Error fetching cabinets waiting for approval:', error);
+      throw error;
+    }
+  }
+
   static async approveCabinet(id: string, userId: string) {
     const cabinet = await Cabinet.findByPk(id);
     
@@ -338,4 +432,4 @@ export class CabinetService {
       throw error;
     }
   }
-} 
+}

@@ -20,6 +20,10 @@ router.use(authenticate('user'));
 // Record routes
 router.post('/', uploadMulter.any(), RecordController.createRecord);
 router.get('/', RecordController.getRecordsByStatus);
+// New endpoint for getting records created by the current user with a specific status
+router.get('/my-records', RecordController.getMyRecordsByStatus);
+// New endpoint for getting records waiting for the current user's approval
+router.get('/waiting-for-my-approval', RecordController.getRecordsWaitingForMyApproval);
 router.get('/:id', RecordController.getRecord);
 router.get('/file/:filePath', RecordController.getFileUrl);
 router.put('/:id/update', uploadMulter.any(), RecordController.updateRecord);
@@ -47,4 +51,4 @@ router.delete(
   RecordController.deleteVersion
 );
 
-export default router; 
+export default router;

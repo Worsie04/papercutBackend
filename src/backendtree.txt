@@ -1,0 +1,162 @@
+.
+├── app.ts
+├── backendtree.txt
+├── config
+│   ├── database.js
+│   └── index.ts
+├── core
+│   ├── domain
+│   ├── interfaces
+│   └── usecases
+├── database
+│   ├── migrations
+│   │   ├── 20240101000000-init-base-tables.js
+│   │   ├── 20240102000000-create-organization-members.js
+│   │   ├── 20240103000000-create-admins.js
+│   │   ├── 20240103500000-create-spaces.js
+│   │   ├── 20240104000000-create-cabinets.js
+│   │   ├── 20240205_add_domain_to_organizations.js
+│   │   ├── 20240205_add_user_type_to_organization_members.js
+│   │   ├── 20240214000000-create-cabinet-members.js
+│   │   ├── 20240215000001-create-groups.js
+│   │   ├── 20240215000002-create-group-members.js
+│   │   ├── 20240219000002-create-roles.js
+│   │   ├── 20240219000003-create-user-roles.js
+│   │   ├── 20240219000005-create-space-members.js
+│   │   ├── 20240219000007-create-records.js
+│   │   ├── 20240219000008-create-settings.js
+│   │   ├── 20240219000009-create-configs.js
+│   │   ├── 20240219000011-create-record-versions.js
+│   │   ├── 20240220000001-add-fields-to-spaces.js
+│   │   ├── 20240306000001-modify-organization-owner.js
+│   │   ├── 20240306000002-fix-organization-owner-associations.js
+│   │   ├── 20240318000001-create-cabinet-followers.js
+│   │   ├── 20240320000000-create-space-invitations.js
+│   │   ├── 20240320000001-add-selected-icon-to-custom-fields.js
+│   │   ├── 20240320000001-update-cabinet-members-role-enum.js
+│   │   ├── 20240320_update_organization_members_role_enum.js
+│   │   ├── 20240321000001-add-created-by-to-cabinets.js
+│   │   ├── 20240321000002-add-status-to-cabinets.js
+│   │   ├── 20240321000003-update-space-invitations-status-enum.js
+│   │   ├── 20240321000006-add-deleted-at-to-user-roles.js
+│   │   ├── 20240321000007-add-uuid-default-to-user-roles.js
+│   │   ├── 20240321000008-add-status-to-spaces.js
+│   │   ├── 20240321000009-add-created-by-to-spaces.js
+│   │   ├── 20240321000010-add-deleted-at-to-space-members.js
+│   │   ├── 20240325000001-fix-cabinet-members-role.js
+│   │   ├── 20240401000001-add-gin-indexes-to-records.js
+│   │   ├── 20240401000002-add-magic-link-to-users.js
+│   │   ├── 20240401000003-fix-cabinet-members-state.js
+│   │   ├── 20240401000004-create-records-notes-comments.js
+│   │   ├── 20240401000005-add-permissions-to-groups.js
+│   │   ├── 20240401000006-create-cabinet-member-permissions.js
+│   │   └── 20240501000001-create-space-comments-rejects.js
+│   ├── migrations_backup
+│   │   ├── 20250124221654-add-gin-indexes-to-records.js
+│   │   ├── 20250208000000-add-magic-link-to-users.js
+│   │   ├── 20250212063033-fix-cabinet-members-state.js
+│   │   ├── 20250214000002-create-records-notes-comments.js
+│   │   ├── 20250214000003-add-permissions-to-groups.js
+│   │   └── 20250214000004-create-cabinet-member-permissions.js
+│   └── seeders
+│       ├── 20240219000001-admin-seeder.js
+│       ├── 20240219000001-default-roles.js
+│       └── 20240401000001-test-super-user.js
+├── infrastructure
+│   ├── database
+│   │   ├── migrations
+│   │   │   └── 20240321000000-add-permissions-to-groups.ts
+│   │   └── sequelize.ts
+│   └── migrations
+│       └── create-space-comments-rejects-table.sql
+├── models
+│   ├── admin.model.ts
+│   ├── associations.ts
+│   ├── base.model.ts
+│   ├── cabinet-follower.model.ts
+│   ├── cabinet-member-permission.model.ts
+│   ├── cabinet-member.model.ts
+│   ├── cabinet.model.ts
+│   ├── config.model.ts
+│   ├── group.model.ts
+│   ├── index.ts
+│   ├── model-associations.ts
+│   ├── organization-member.model.ts
+│   ├── organization.model.ts
+│   ├── record-note-comment.model.ts
+│   ├── record-version.model.ts
+│   ├── record.model.ts
+│   ├── role.model.ts
+│   ├── setting.model.ts
+│   ├── space-comment-reject.model.ts
+│   ├── space-member.model.ts
+│   ├── space.model.ts
+│   ├── spaceInvitation.model.ts
+│   ├── user-role.model.ts
+│   └── user.model.ts
+├── presentation
+│   ├── controllers
+│   │   ├── approval.controller.ts
+│   │   ├── auth.controller.ts
+│   │   ├── cabinet-follower.controller.ts
+│   │   ├── cabinet-member.controller.ts
+│   │   ├── cabinet.controller.ts
+│   │   ├── group.controller.ts
+│   │   ├── organization-member.controller.ts
+│   │   ├── organization.controller.ts
+│   │   ├── record.controller.ts
+│   │   ├── role.controller.ts
+│   │   ├── space-comment.controller.ts
+│   │   ├── space.controller.ts
+│   │   ├── twoFactor.controller.ts
+│   │   └── user.controller.ts
+│   ├── middlewares
+│   │   ├── auth.middleware.ts
+│   │   ├── errorHandler.ts
+│   │   ├── logger.middleware.ts
+│   │   ├── organization.middleware.ts
+│   │   ├── upload.middleware.ts
+│   │   └── validate.middleware.ts
+│   ├── routes
+│   │   ├── approval.routes.ts
+│   │   ├── auth.routes.ts
+│   │   ├── cabinet-member.routes.ts
+│   │   ├── cabinet.routes.ts
+│   │   ├── group.routes.ts
+│   │   ├── index.ts
+│   │   ├── organization-member.routes.ts
+│   │   ├── record.routes.ts
+│   │   ├── role.routes.ts
+│   │   ├── space.routes.ts
+│   │   ├── user.routes.ts
+│   │   └── worsieorganization.routes.ts
+│   └── validators
+│       ├── auth.validator.ts
+│       ├── group.validator.ts
+│       └── user.validator.ts
+├── server.ts
+├── services
+│   ├── auth.service.ts
+│   ├── cabinet-follower.service.ts
+│   ├── cabinet-member.service.ts
+│   ├── cabinet.service.ts
+│   ├── email.service.ts
+│   ├── group.service.ts
+│   ├── organization-member.service.ts
+│   ├── organization.service.ts
+│   ├── record.service.ts
+│   ├── space-comment.service.ts
+│   ├── space.service.ts
+│   ├── twoFactor.service.ts
+│   ├── upload.service.ts
+│   └── user.service.ts
+├── types
+│   ├── express.d.ts
+│   └── pdf-parse.d.ts
+└── utils
+    ├── email.util.ts
+    ├── jwt.util.ts
+    ├── r2.util.ts
+    └── upload.util.ts
+
+23 directories, 137 files

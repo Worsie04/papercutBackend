@@ -9,7 +9,7 @@ export const sequelize = new Sequelize({
   database: config.database.name,
   username: config.database.user,
   password: config.database.password,
-  logging: config.nodeEnv === 'development' ? console.log : false,
+  logging: false, // Disable SQL query logging
   define: {
     timestamps: true,
     underscored: true,
@@ -39,8 +39,8 @@ export const initializeDatabase = async () => {
 
     // Sync models with database (in development only)
     if (config.nodeEnv === 'development') {
-      console.log('Running in development mode - syncing database models');
-      await sequelize.sync();
+      // Sync without logging details
+      await sequelize.sync({ logging: false });
       console.log('Database models synchronized successfully.');
     } else {
       console.log(`Running in ${config.nodeEnv} mode - skipping automatic database sync`);
