@@ -31,9 +31,20 @@ export class RecordController {
 
       // Handle file uploads for attachment fields
       const processedCustomFields = { ...customFields };
+      
+      // Find PDF file if present
+      let pdfFile: Express.Multer.File | undefined;
+      
       if (files && Array.isArray(files)) {
         for (const file of files) {
           const fieldId = file.fieldname; // multer sets this from the FormData field name
+          
+          // Check if this is a PDF file intended to be processed separately
+          if (fieldId === 'pdfFile' && file.mimetype === 'application/pdf') {
+            pdfFile = file;
+            continue;
+          }
+          
           if (file) {
             const uploadResult = await UploadService.uploadFile(file);
             processedCustomFields[fieldId] = {
@@ -56,7 +67,8 @@ export class RecordController {
         status: status as RecordStatus,
         isTemplate,
         isActive,
-        tags
+        tags,
+        pdfFile
       });
 
       res.status(201).json(record);
@@ -66,6 +78,89 @@ export class RecordController {
         res.status(error.statusCode).json({ error: error.message });
       } else {
         res.status(500).json({ error: 'Failed to create record' });
+      }
+    }
+  }
+
+  static async extractPdfFields(req: Request, res: Response) {
+    try {
+      const file = req.file as Express.Multer.File;
+      if (!file || file.mimetype !== 'application/pdf') {
+        return res.status(400).json({ error: 'PDF file is required' });
+      }
+      
+      const cabinetId = req.query.cabinetId as string;
+      if (!cabinetId) {
+        return res.status(400).json({ error: 'Cabinet ID is required' });
+      }
+      
+      // Process PDF file to extract fields
+      const pdfData = await RecordService.processPdfFile(file);
+      
+      // If cabinet ID is provided, get cabinet fields for matching
+      let cabinetFields: any[] = [];
+      let fieldMatches: { extractedField: any; possibleMatches: { fieldId: any; fieldName: any; similarity: number }[] }[] = [];
+      
+      if (cabinetId) {
+        // Get cabinet with its custom fields
+        const cabinet = await Cabinet.findByPk(cabinetId);
+        if (cabinet && cabinet.customFields) {
+          cabinetFields = cabinet.customFields;
+          
+          // Match extracted fields with cabinet fields
+          // Simple matching based on field name similarity
+          fieldMatches = pdfData.extractedFields.map(extractedField => {
+            const matches = cabinetFields
+              .map(cabinetField => ({
+                cabinetField,
+                similarity: calculateStringSimilarity(
+                  extractedField.name.toLowerCase(),
+                  cabinetField.name.toLowerCase()
+                )
+              }))
+              .filter(match => match.similarity > 0.5) // Only keep reasonable matches
+              .sort((a, b) => b.similarity - a.similarity);
+            
+            return {
+              extractedField,
+              possibleMatches: matches.map(m => ({
+                fieldId: m.cabinetField.id,
+                fieldName: m.cabinetField.name,
+                similarity: m.similarity
+              }))
+            };
+          });
+        }
+      }
+      
+      res.status(200).json({
+        success: true,
+        pageCount: pdfData.pageCount,
+        extractedFields: pdfData.extractedFields,
+        fieldMatches,
+        cabinetFields
+      });
+    } catch (error) {
+      console.error('Error extracting PDF fields:', error);
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Failed to extract PDF fields' });
+      }
+    }
+  }
+
+  static async getRecordWithPdf(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const record = await RecordService.getRecordWithPdf(id);
+      res.json(record);
+    } catch (error) {
+      console.error('Error getting record with PDF data:', error);
+      if (error instanceof AppError && error.name === 'NotFoundError') {
+        res.status(404).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Failed to get record with PDF data' });
       }
     }
   }
@@ -558,4 +653,33 @@ export class RecordController {
       }
     }
   }
+}
+
+// Utility function to calculate string similarity for field matching
+function calculateStringSimilarity(str1: string, str2: string): number {
+  // Check for exact match
+  if (str1 === str2) return 1.0;
+  
+  // Check if one string contains the other
+  if (str1.includes(str2) || str2.includes(str1)) {
+    return 0.8;
+  }
+  
+  // Check for word overlap
+  const words1 = str1.split(/\s+/);
+  const words2 = str2.split(/\s+/);
+  
+  let matches = 0;
+  for (const word1 of words1) {
+    if (word1.length < 3) continue; // Skip short words
+    for (const word2 of words2) {
+      if (word2.length < 3) continue; // Skip short words
+      if (word1 === word2 || word1.includes(word2) || word2.includes(word1)) {
+        matches++;
+        break;
+      }
+    }
+  }
+  
+  return matches / Math.max(words1.length, words2.length);
 }

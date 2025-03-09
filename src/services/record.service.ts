@@ -7,6 +7,23 @@ import { RecordVersion } from '../models/record-version.model';
 import { sequelize } from '../infrastructure/database/sequelize';
 import { CabinetMember } from '../models/cabinet-member.model';
 import { RecordNoteComment } from '../models/record-note-comment.model';
+import { PdfFile } from '../models/pdf-file.model';
+import fs from 'fs';
+import path from 'path';
+import { promisify } from 'util';
+
+const { PDFExtract } = require('pdf.js-extract');
+const pdfExtract = new PDFExtract();
+
+// For file operations
+const writeFileAsync = promisify(fs.writeFile);
+const readFileAsync = promisify(fs.readFile);
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+
+// Make sure the upload directory exists
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 interface CustomFieldValue {
   fieldId: number;
@@ -23,6 +40,194 @@ interface ExtendedCustomField extends CustomField {
   characterLimit?: number;
 }
 
+interface PdfExtractResult {
+  extractedText: string;
+  extractedFields: { name: string; value: string }[];
+  pageCount: number;
+}
+
+// Enhanced PDF extractor that analyzes content using pdf.js-extract
+async function extractPdfContent(file: Express.Multer.File): Promise<PdfExtractResult> {
+  try {
+    // Save file temporarily for extraction
+    const tempPath = path.join(UPLOAD_DIR, `temp_${Date.now()}.pdf`);
+    await writeFileAsync(tempPath, file.buffer);
+    
+    // Extract data from PDF
+    const extractOptions = {};
+    const pdfData = await pdfExtract.extract(tempPath, extractOptions);
+    
+    // Clean up temp file
+    fs.unlink(tempPath, (err) => {
+      if (err) console.error('Error removing temp file:', err);
+    });
+    
+    // Process the extracted data
+    const pageCount = pdfData.pages.length;
+    let extractedText = '';
+    const extractedFields: { name: string; value: string }[] = [];
+    
+    // Extract text and look for key-value pairs
+    for (const page of pdfData.pages) {
+      // Sort content by y position to maintain reading order
+      const sortedContent = [...page.content].sort((a, b) => a.y - b.y);
+      
+      // Join text by line
+      let currentY = -1;
+      let currentLine = '';
+      
+      for (const item of sortedContent) {
+        if (Math.abs(item.y - currentY) > 1) {
+          // New line detected
+          if (currentLine) {
+            extractedText += currentLine + '\n';
+            
+            // Try to extract key-value pairs
+            const colonMatch = currentLine.match(/([^:]+):\s*(.*)/);
+            if (colonMatch && colonMatch[1] && colonMatch[2]) {
+              const key = colonMatch[1].trim();
+              const value = colonMatch[2].trim();
+              
+              // Skip empty values and very short keys
+              if (value && key.length > 1) {
+                extractedFields.push({
+                  name: key,
+                  value: value
+                });
+              }
+            }
+            
+            // Reset current line
+            currentLine = '';
+          }
+          currentY = item.y;
+        }
+        
+        // Add text to current line
+        currentLine += item.str + ' ';
+      }
+      
+      // Don't forget the last line
+      if (currentLine) {
+        extractedText += currentLine + '\n';
+      }
+    }
+    
+    // Analyze the extracted text for structure (tables, lists, etc.)
+    const lines = extractedText.split('\n');
+    const structuredExtraction = analyzeTextStructure(lines);
+    
+    // Combine basic extraction with structured analysis
+    return {
+      extractedText,
+      extractedFields: [...extractedFields, ...structuredExtraction],
+      pageCount
+    };
+  } catch (error) {
+    console.error('Error extracting PDF content:', error);
+    throw new AppError(500, 'Failed to process PDF file');
+  }
+}
+
+// Helper function to analyze text structure for additional field extraction
+function analyzeTextStructure(lines: string[]): { name: string; value: string }[] {
+  const extractedFields: { name: string; value: string }[] = [];
+  
+  // Detect tables, forms, address blocks, etc.
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    // Look for address blocks
+    if (line.match(/bill to|ship to|address|customer|client/i) && i + 1 < lines.length) {
+      let addressValue = '';
+      let j = i + 1;
+      while (j < lines.length && j < i + 5) {
+        const addressLine = lines[j].trim();
+        if (!addressLine || addressLine.includes(':')) break;
+        addressValue += addressLine + ' ';
+        j++;
+      }
+      
+      if (addressValue.trim()) {
+        extractedFields.push({
+          name: line.replace(':', '').trim(),
+          value: addressValue.trim()
+        });
+      }
+    }
+    
+    // Common invoice fields
+    const commonFields = ['invoice', 'date', 'due date', 'subtotal', 'tax', 'total', 'amount', 'payment', 'po number'];
+    for (const field of commonFields) {
+      if (line.toLowerCase().includes(field)) {
+        // Try to extract value from same line or next line
+        let value = '';
+        
+        // Check if there's already a value after the field name
+        if (line.includes(':')) {
+          const parts = line.split(':');
+          if (parts.length > 1 && parts[1].trim()) {
+            value = parts[1].trim();
+          }
+        }
+        // Look for numeric value on same line
+        else if (/\d/.test(line)) {
+          const words = line.split(/\s+/);
+          const numericWords = words.filter(w => /\d/.test(w));
+          if (numericWords.length > 0) {
+            // If field is at beginning and there's a number after
+            if (line.toLowerCase().startsWith(field) && numericWords.length > 0) {
+              value = numericWords.join(' ');
+            }
+            // Other patterns based on field type
+            else if (field === 'total' || field === 'subtotal' || field === 'amount' || field === 'tax') {
+              // Look for currency formats
+              const currencyMatch = line.match(/[\$€£]\s*[\d,]+\.?\d*/);
+              if (currencyMatch) {
+                value = currencyMatch[0];
+              } else {
+                value = numericWords.join(' ');
+              }
+            } else if (field === 'date' || field === 'due date') {
+              // Look for date formats
+              const dateMatch = line.match(/\d{1,4}[\/-]\d{1,2}[\/-]\d{1,4}|\d{1,2}\s+[A-Za-z]+\s+\d{1,4}/);
+              if (dateMatch) {
+                value = dateMatch[0];
+              } else {
+                value = numericWords.join(' ');
+              }
+            } else {
+              value = numericWords.join(' ');
+            }
+          }
+        }
+        // If no value found, check next line
+        else if (!value && i + 1 < lines.length) {
+          const nextLine = lines[i + 1].trim();
+          if (nextLine && !/\w+\s*:/.test(nextLine)) {
+            value = nextLine;
+          }
+        }
+        
+        if (value) {
+          const fieldName = field.charAt(0).toUpperCase() + field.slice(1);
+          
+          // Avoid duplicates
+          if (!extractedFields.some(ef => ef.name.toLowerCase() === fieldName.toLowerCase())) {
+            extractedFields.push({
+              name: fieldName,
+              value: value
+            });
+          }
+        }
+      }
+    }
+  }
+  
+  return extractedFields;
+}
+
 export class RecordService {
   
   static async createRecord(data: {
@@ -34,6 +239,7 @@ export class RecordService {
     isTemplate: boolean;
     isActive: boolean;
     tags: string[];
+    pdfFile?: Express.Multer.File;
   }) {
     // Validate title
     if (!data.title || !data.title.trim()) {
@@ -65,22 +271,159 @@ export class RecordService {
       }
     }
 
-    // Create record with validated fields and file information
-    const record = await Record.create({
-      ...data,
-      title: data.title.trim(),
-      customFields: validatedFields,
-      lastModifiedBy: data.creatorId,
-      version: 1,
-      // Add file information if present
-      ...(fileInfo && {
-        fileName: fileInfo.fileName,
-        filePath: fileInfo.filePath,
-        fileSize: fileInfo.fileSize,
-        fileType: fileInfo.fileType,
-        fileHash: fileInfo.fileHash,
-      })
+    // Start a transaction for the record creation
+    const transaction = await sequelize.transaction();
+
+    try {
+      // Create record with validated fields and file information
+      const record = await Record.create({
+        ...data,
+        title: data.title.trim(),
+        customFields: validatedFields,
+        lastModifiedBy: data.creatorId,
+        version: 1,
+        // Add file information if present
+        ...(fileInfo && {
+          fileName: fileInfo.fileName,
+          filePath: fileInfo.filePath,
+          fileSize: fileInfo.fileSize,
+          fileType: fileInfo.fileType,
+          fileHash: fileInfo.fileHash,
+        })
+      }, { transaction });
+
+      // If a PDF file was provided, try to process it but don't fail record creation if it fails
+      if (data.pdfFile) {
+        try {
+          // Process PDF with proper error handling
+          let pdfData;
+          try {
+            pdfData = await extractPdfContent(data.pdfFile);
+          } catch (pdfError) {
+            console.error('PDF processing error (non-fatal):', pdfError);
+            // Use fallback data when PDF processing fails
+            pdfData = {
+              extractedText: 'PDF text extraction failed',
+              extractedFields: [
+                { name: 'Document Name', value: data.pdfFile.originalname },
+                { name: 'File Size', value: `${Math.round(data.pdfFile.size / 1024)} KB` }
+              ],
+              pageCount: 1
+            };
+          }
+          
+          // Generate a unique filename for the PDF
+          const timestamp = Date.now();
+          const pdfFileName = `${timestamp}-${data.pdfFile.originalname.replace(/\s+/g, '_')}`;
+          const pdfFilePath = path.join(UPLOAD_DIR, pdfFileName);
+          
+          // Ensure upload directory exists
+          if (!fs.existsSync(UPLOAD_DIR)) {
+            fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+          }
+          
+          // Save the PDF file to disk
+          await writeFileAsync(pdfFilePath, data.pdfFile.buffer);
+          
+          // Create a new PDF file record
+          await PdfFile.create({
+            recordId: record.id,
+            originalFileName: data.pdfFile.originalname,
+            filePath: pdfFilePath,
+            fileSize: data.pdfFile.size,
+            fileHash: 'N/A', // In a real implementation, would calculate an actual hash
+            pageCount: pdfData.pageCount,
+            extractedText: pdfData.extractedText,
+            extractedMetadata: {
+              fields: pdfData.extractedFields
+            }
+          }, { transaction });
+        } catch (pdfStoreError) {
+          // Log error but continue with record creation
+          console.error('Failed to store PDF file (continuing with record creation):', pdfStoreError);
+        }
+      }
+
+      // Commit the transaction
+      await transaction.commit();
+      return record;
+    } catch (error) {
+      // Rollback transaction in case of error
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  /**
+   * Process a PDF file to extract text and metadata
+   */
+  static async processPdfFile(file: Express.Multer.File): Promise<PdfExtractResult> {
+    try {
+      return await extractPdfContent(file);
+    } catch (error) {
+      console.error('Error in processPdfFile:', error);
+      
+      // Return basic information even if detailed extraction fails
+      return {
+        extractedText: 'PDF text extraction failed',
+        extractedFields: [
+          { name: 'Document Name', value: file.originalname },
+          { name: 'File Size', value: `${Math.round(file.size / 1024)} KB` }
+        ],
+        pageCount: 1
+      };
+    }
+  }
+
+  /**
+   * Get a record with its PDF file
+   */
+  static async getRecordWithPdf(id: string) {
+    const record = await Record.findByPk(id, {
+      include: [
+        {
+          model: Cabinet,
+          as: 'cabinet'
+        },
+        {
+          model: User,
+          as: 'creator'
+        },
+        {
+          model: PdfFile,
+          as: 'pdfFile'
+        },
+        {
+          model: RecordNoteComment,
+          as: 'notes',
+          where: { type: 'note' },
+          required: false,
+          include: [{
+            model: User,
+            as: 'creator',
+            attributes: ['id', 'firstName', 'lastName']
+          }],
+          order: [['createdAt', 'DESC']],
+          limit: 1
+        },
+        {
+          model: RecordNoteComment,
+          as: 'comments',
+          where: { type: 'comment' },
+          required: false,
+          include: [{
+            model: User,
+            as: 'creator',
+            attributes: ['id', 'firstName', 'lastName']
+          }],
+          order: [['createdAt', 'DESC']]
+        }
+      ]
     });
+
+    if (!record) {
+      throw new AppError(400, 'Record not found');
+    }
 
     return record;
   }

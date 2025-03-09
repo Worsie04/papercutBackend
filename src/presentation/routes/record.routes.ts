@@ -20,6 +20,11 @@ router.use(authenticate('user'));
 // Record routes
 router.post('/', uploadMulter.any(), RecordController.createRecord);
 router.get('/', RecordController.getRecordsByStatus);
+
+// PDF specific routes
+router.post('/extract-pdf-fields', uploadMulter.single('pdfFile'), RecordController.extractPdfFields);
+router.get('/:id/pdf', RecordController.getRecordWithPdf);
+
 // New endpoint for getting records created by the current user with a specific status
 router.get('/my-records', RecordController.getMyRecordsByStatus);
 // New endpoint for getting records waiting for the current user's approval

@@ -42,6 +42,7 @@ interface InvitationResult {
 }
 
 export class SpaceService {
+
   static async getAvailableUsers() {
     const users = await User.findAll({
       where: { isActive: true },
@@ -113,6 +114,7 @@ export class SpaceService {
           settings: {
             userGroup: data.userGroup,
           },
+          status: data.requireApproval ? 'pending' : 'approved',
         },
         { transaction }
       );
@@ -182,7 +184,6 @@ export class SpaceService {
       throw new AppError(404, 'Space not found');
     }
 
-    // Transform the response to include role directly in member object
     const transformedSpace = space.toJSON();
     transformedSpace.members = transformedSpace.spaceMembers.map((member: any) => ({
       ...member,
@@ -510,10 +511,6 @@ export class SpaceService {
     try {
       console.log('Fetching spaces created by user that are pending approval:', userId);
       
-      // Find spaces where:
-      // 1. The space requires approval
-      // 2. The space status is pending
-      // 3. The space was created by the current user
       const pendingSpaces = await Space.findAll({
         where: {
           status: 'pending',
@@ -552,10 +549,6 @@ export class SpaceService {
     try {
       console.log('Fetching spaces waiting for approval by user:', userId);
       
-      // Find spaces where:
-      // 1. The space requires approval
-      // 2. The space status is pending
-      // 3. The user is in the approvers list
       const pendingSpaces = await Space.findAll({
         where: {
           status: 'pending',
@@ -755,9 +748,6 @@ export class SpaceService {
     try {
       console.log(`Fetching spaces created by user with status ${status}:`, userId);
       
-      // Find spaces where:
-      // 1. The space has the specified status
-      // 2. The space was created by the current user
       const spaces = await Space.findAll({
         where: {
           status,
@@ -773,13 +763,13 @@ export class SpaceService {
       
       console.log(`Found ${spaces.length} spaces with status ${status} created by this user`);
       
-      // Log the first space to debug
+      
       if (spaces.length > 0) {
         console.log('First space example:', JSON.stringify(spaces[0], null, 2));
       }
       
       return spaces.map((space: any) => {
-        // Ensure we have valid owner data
+   
         const ownerData = space.owner ? {
           firstName: space.owner.firstName || 'Unknown',
           lastName: space.owner.lastName || 'User',
@@ -815,8 +805,7 @@ export class SpaceService {
         throw new Error('Space not found');
       }
       
-      // 2. Verify user has permission to delete the space
-      // Only allow super users or the space owner to delete
+      
       const userOrganizations = await OrganizationMember.findAll({
         where: {
           userId,
