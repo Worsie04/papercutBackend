@@ -9,7 +9,7 @@ module.exports = {
         allowNull: false,
         primaryKey: true
       },
-      spaceId: {
+      space_id: {
         type: Sequelize.UUID,
         allowNull: false,
         references: {
@@ -19,7 +19,7 @@ module.exports = {
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE'
       },
-      fromUserId: {
+      from_user_id: {
         type: Sequelize.UUID,
         allowNull: false,
         references: {
@@ -29,7 +29,7 @@ module.exports = {
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE'
       },
-      toUserId: {
+      to_user_id: {
         type: Sequelize.UUID,
         allowNull: false,
         references: {
@@ -43,11 +43,11 @@ module.exports = {
         type: Sequelize.TEXT,
         allowNull: true
       },
-      createdAt: {
+      created_at: {
         allowNull: false,
         type: Sequelize.DATE
       },
-      updatedAt: {
+      updated_at: {
         allowNull: false,
         type: Sequelize.DATE
       }

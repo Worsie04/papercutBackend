@@ -162,11 +162,12 @@ export class NotificationService {
   }
 
   static async createSpaceDeletionNotification(
+    spaceId: string,
     userId: string,
     spaceName: string,
     deletedById: string
   ): Promise<Notification> {
-    // Get the name of the user who deleted the space
+   
     const deletedByUser = await User.findByPk(deletedById, {
       attributes: ['firstName', 'lastName']
     });
@@ -180,7 +181,8 @@ export class NotificationService {
       title: 'Space Deleted',
       message: `${deletedByName} has deleted the space "${spaceName}".`,
       type: 'space_deletion',
-      entityType: 'space'
+      entityType: 'space',
+      entityId: spaceId
     });
   }
 }

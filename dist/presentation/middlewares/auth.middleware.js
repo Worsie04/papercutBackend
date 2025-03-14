@@ -18,7 +18,7 @@ const authenticate = (type) => {
             }
             //console.log('Using token:', token);
             const decoded = jwt_util_1.JwtUtil.verifyToken(token);
-            console.log('Decoded token:', decoded);
+            
             if (type) {
                 if (Array.isArray(type)) {
                     // Check if user type or role matches any of the allowed types

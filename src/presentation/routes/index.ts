@@ -10,6 +10,8 @@ import worsieorganizationRoutes from './worsieorganization.routes';
 import roleRoutes from './role.routes';
 import groupRoutes from './group.routes';
 import notificationRoutes from './notification.routes';
+import fileRoutes from './file.routes';
+import dashboardRoutes from './dashboard.routes';
 
 const router = Router();
 
@@ -28,6 +30,8 @@ router.use(`${API_VERSION}/organizations`, worsieorganizationRoutes);
 router.use(`${API_VERSION}/roles`, roleRoutes);
 router.use(`${API_VERSION}/groups`, groupRoutes);
 router.use(`${API_VERSION}/notifications`, notificationRoutes);
+router.use(`${API_VERSION}/files`, fileRoutes);
+router.use(`${API_VERSION}/dashboard`, dashboardRoutes);
 
 // Health check endpoint
 router.get(`${API_VERSION}/health`, (req, res) => {

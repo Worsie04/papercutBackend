@@ -13,6 +13,8 @@ import { UserRole } from './user-role.model';
 import { SpaceMember } from './space-member.model';
 import { SpaceCommentReject } from './space-comment-reject.model';
 import { SpaceReassignment } from './space-reassignment.model';
+import File from './file.model';
+import RecordFile from './record-file.model';
 
 export const initializeModels = (sequelize: Sequelize) => {
   // Initialize all models first
@@ -30,7 +32,9 @@ export const initializeModels = (sequelize: Sequelize) => {
     UserRole,
     SpaceMember,
     SpaceCommentReject,
-    SpaceReassignment
+    SpaceReassignment,
+    File,
+    RecordFile
   };
 
   return models;
@@ -51,5 +55,7 @@ export {
   UserRole,
   SpaceMember,
   SpaceCommentReject,
-  SpaceReassignment
+  SpaceReassignment,
+  File,
+  RecordFile
 };

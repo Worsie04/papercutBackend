@@ -4,9 +4,14 @@
 module.exports = {
   async up(queryInterface, Sequelize) {
     await queryInterface.createTable('cabinet_members', {
+      id: {
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4,
+        primaryKey: true,
+      },
       cabinet_id: {
         type: Sequelize.UUID,
-        primaryKey: true,
+        allowNull: false,
         references: {
           model: 'cabinets',
           key: 'id',
@@ -15,7 +20,7 @@ module.exports = {
       },
       user_id: {
         type: Sequelize.UUID,
-        primaryKey: true,
+        allowNull: false,
         references: {
           model: 'users',
           key: 'id',
@@ -23,18 +28,21 @@ module.exports = {
         onDelete: 'CASCADE',
       },
       role: {
-        type: Sequelize.STRING,
+        type: Sequelize.ENUM('owner', 'member', 'viewer'),
         allowNull: false,
         defaultValue: 'member',
       },
       permissions: {
         type: Sequelize.JSONB,
-        allowNull: true,
+        allowNull: false,
         defaultValue: {
-          canRead: true,
-          canWrite: false,
-          canDelete: false,
-          canShare: false,
+          readRecords: true,
+          createRecords: false,
+          updateRecords: false,
+          deleteRecords: false,
+          manageCabinet: false,
+          downloadFiles: true,
+          exportTables: false
         },
       },
       created_at: {
@@ -47,6 +55,10 @@ module.exports = {
         allowNull: false,
         defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       },
+      deleted_at: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
     });
 
     // Add indexes
@@ -57,4 +69,4 @@ module.exports = {
   async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('cabinet_members');
   }
-}; 
+};

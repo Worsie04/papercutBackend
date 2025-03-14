@@ -48,6 +48,7 @@ SpaceReassignment.init(
         model: 'spaces',
         key: 'id',
       },
+      field: 'space_id',
     },
     fromUserId: {
       type: DataTypes.UUID,
@@ -56,6 +57,7 @@ SpaceReassignment.init(
         model: 'users',
         key: 'id',
       },
+      field: 'from_user_id',
     },
     toUserId: {
       type: DataTypes.UUID,
@@ -64,6 +66,7 @@ SpaceReassignment.init(
         model: 'users',
         key: 'id',
       },
+      field: 'to_user_id',
     },
     message: {
       type: DataTypes.TEXT,
@@ -72,16 +75,20 @@ SpaceReassignment.init(
     createdAt: {
       type: DataTypes.DATE,
       allowNull: false,
+      field: 'created_at',
     },
     updatedAt: {
       type: DataTypes.DATE,
       allowNull: false,
+      field: 'updated_at',
     },
   },
   {
     sequelize,
     tableName: 'space_reassignments',
     modelName: 'SpaceReassignment',
+    underscored: true,
+    timestamps: true,
   }
 );
 

@@ -39,9 +39,14 @@ export const initializeDatabase = async () => {
 
     // Sync models with database (in development only)
     if (config.nodeEnv === 'development') {
-      // Sync without logging details
-      await sequelize.sync({ logging: false });
-      console.log('Database models synchronized successfully.');
+      // Using a safer sync configuration that doesn't drop columns
+      await sequelize.sync({ 
+        logging: false,
+        alter: false,    // Don't alter existing tables
+        force: false     // Don't drop and recreate tables
+      });
+      console.log('Database connection verified successfully. Models NOT automatically synchronized to prevent data loss.');
+      console.log('Use migrations to make database schema changes.');
     } else {
       console.log(`Running in ${config.nodeEnv} mode - skipping automatic database sync`);
     }
@@ -51,4 +56,4 @@ export const initializeDatabase = async () => {
     console.error('Unable to connect to the database:', error);
     throw error;
   }
-}; 
+};

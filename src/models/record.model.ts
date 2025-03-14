@@ -167,5 +167,3 @@ Record.init(
     paranoid: true,
   }
 );
-
-// ... rest of the file ... 

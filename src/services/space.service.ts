@@ -151,6 +151,28 @@ export class SpaceService {
       return newSpace;
     });
 
+    // Send notifications to approvers if approval is required
+    if (data.requireApproval && Array.isArray(data.approvers) && data.approvers.length > 0) {
+      try {
+        // Get creator information for the notification
+        const creator = await User.findByPk(data.ownerId);
+        const creatorName = creator ? `${creator.firstName} ${creator.lastName}` : 'A user';
+        
+        // Send notification to each approver
+        for (const approver of data.approvers) {
+          await NotificationService.createSpaceCreationNotification(
+            approver.userId,
+            space.id,
+            space.name,
+            creatorName
+          );
+        }
+      } catch (error) {
+        console.error('Error sending space creation notifications:', error);
+        // We don't want to fail the space creation if notifications fail
+      }
+    }
+
     // Fetch the space with member information
     return this.getSpace(space.id);
   }
@@ -339,12 +361,35 @@ export class SpaceService {
 
   static async approveSpace(spaceId: string) {
     try {
-      const space = await Space.findByPk(spaceId);
+      const space = await Space.findByPk(spaceId, {
+        include: [{
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'firstName', 'lastName']
+        }]
+      });
+      
       if (!space) {
         throw new Error('Space not found');
       }
 
       await space.update({ status: 'approved' });
+      
+      // Send notification to the space owner
+      if (space.owner) {
+        try {
+          await NotificationService.createSpaceApprovalNotification(
+            space.owner.id,
+            space.id,
+            space.name
+          );
+          console.log(`Approval notification sent to space owner: ${space.owner.id}`);
+        } catch (error) {
+          console.error('Error sending space approval notification:', error);
+          // We don't want to fail the space approval if the notification fails
+        }
+      }
+      
       return space;
     } catch (error) {
       console.error('Error approving space:', error);
@@ -354,7 +399,14 @@ export class SpaceService {
 
   static async rejectSpace(spaceId: string, reason: string, rejectedBy: string) {
     try {
-      const space = await Space.findByPk(spaceId);
+      const space = await Space.findByPk(spaceId, {
+        include: [{
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'firstName', 'lastName']
+        }]
+      });
+      
       if (!space) {
         throw new Error('Space not found');
       }
@@ -364,6 +416,23 @@ export class SpaceService {
         rejectionReason: reason,
         rejectedBy
       });
+      
+      // Send notification to the space owner
+      if (space.owner) {
+        try {
+          await NotificationService.createSpaceRejectionNotification(
+            space.owner.id,
+            space.id,
+            space.name,
+            reason
+          );
+          console.log(`Rejection notification sent to space owner: ${space.owner.id}`);
+        } catch (error) {
+          console.error('Error sending space rejection notification:', error);
+          // We don't want to fail the space rejection if the notification fails
+        }
+      }
+      
       return space;
     } catch (error) {
       console.error('Error rejecting space:', error);
@@ -373,7 +442,14 @@ export class SpaceService {
 
   static async resubmitSpace(spaceId: string, message: string, userId: string) {
     try {
-      const space = await Space.findByPk(spaceId);
+      const space = await Space.findByPk(spaceId, {
+        include: [{
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'firstName', 'lastName']
+        }]
+      });
+      
       if (!space) {
         throw new Error('Space not found');
       }
@@ -392,6 +468,29 @@ export class SpaceService {
         message: message || 'Space resubmitted for approval.',
         type: 'update'
       });
+      
+      // Send notifications to approvers
+      if (space.approvers && Array.isArray(space.approvers) && space.approvers.length > 0) {
+        try {
+          // Get submitter information for the notification
+          const submitter = await User.findByPk(userId);
+          const submitterName = submitter ? `${submitter.firstName} ${submitter.lastName}` : 'A user';
+          
+          // Send notification to each approver
+          for (const approver of space.approvers) {
+            await NotificationService.createSpaceCreationNotification(
+              approver.userId,
+              space.id,
+              space.name,
+              submitterName
+            );
+          }
+          console.log(`Resubmission notifications sent to ${space.approvers.length} approvers`);
+        } catch (error) {
+          console.error('Error sending space resubmission notifications:', error);
+          // We don't want to fail the space resubmission if notifications fail
+        }
+      }
       
       return space;
     } catch (error) {
@@ -575,8 +674,6 @@ export class SpaceService {
       console.log('Found spaces waiting for approval by this user:', spacesWaitingForApproval.length);
       
       return spacesWaitingForApproval.map((space: any) => {
-        // Log the space object to debug
-        console.log('Space object:', JSON.stringify(space, null, 2));
         
         return {
           id: space.id,
@@ -746,7 +843,6 @@ export class SpaceService {
 
   static async getMySpacesByStatus(userId: string, status: string) {
     try {
-      console.log(`Fetching spaces created by user with status ${status}:`, userId);
       
       const spaces = await Space.findAll({
         where: {
@@ -800,11 +896,17 @@ export class SpaceService {
       console.log(`Attempting to delete space ${spaceId} by user ${userId}`);
       
       // 1. Verify the space exists
-      const space = await Space.findByPk(spaceId);
+      const space = await Space.findByPk(spaceId, {
+        include: [{
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'firstName', 'lastName']
+        }]
+      });
+      
       if (!space) {
         throw new Error('Space not found');
       }
-      
       
       const userOrganizations = await OrganizationMember.findAll({
         where: {
@@ -820,6 +922,10 @@ export class SpaceService {
       if (!isSuperUser && !isOwner) {
         throw new Error('You do not have permission to delete this space');
       }
+
+      // Store space name for notifications before deletion
+      const spaceName = space.name;
+      const spaceOwnerId = space.ownerId;
       
       // 3. Delete all related records using a transaction
       const transaction = await sequelize.transaction();
@@ -831,11 +937,15 @@ export class SpaceService {
           transaction
         });
         
-        // Delete space reassignments
-        await SpaceReassignment.destroy({
-          where: { spaceId },
-          transaction
-        });
+        // Delete space reassignments using raw SQL to ensure correct column name
+        await sequelize.query(
+          `DELETE FROM space_reassignments WHERE "space_id" = :spaceId`,
+          { 
+            replacements: { spaceId },
+            type: QueryTypes.DELETE,
+            transaction
+          }
+        );
         
         // Delete space invitations
         await SpaceInvitation.destroy({
@@ -862,7 +972,7 @@ export class SpaceService {
         for (const cabinet of cabinets) {
           // Delete cabinet members
           await sequelize.query(
-            `DELETE FROM cabinet_members WHERE "cabinetId" = :cabinetId`,
+            `DELETE FROM cabinet_members WHERE "cabinet_id" = :cabinetId`,
             { 
               replacements: { cabinetId: cabinet.id },
               type: QueryTypes.DELETE,
@@ -872,7 +982,7 @@ export class SpaceService {
           
           // Delete cabinet followers
           await sequelize.query(
-            `DELETE FROM cabinet_followers WHERE "cabinetId" = :cabinetId`,
+            `DELETE FROM cabinet_followers WHERE "cabinet_id" = :cabinetId`,
             { 
               replacements: { cabinetId: cabinet.id },
               type: QueryTypes.DELETE,
@@ -889,7 +999,7 @@ export class SpaceService {
           for (const record of records) {
             // Delete record versions
             await sequelize.query(
-              `DELETE FROM record_versions WHERE "recordId" = :recordId`,
+              `DELETE FROM record_versions WHERE "record_id" = :recordId`,
               { 
                 replacements: { recordId: record.id },
                 type: QueryTypes.DELETE,
@@ -899,7 +1009,7 @@ export class SpaceService {
             
             // Delete record notes/comments
             await sequelize.query(
-              `DELETE FROM record_notes WHERE "recordId" = :recordId`,
+              `DELETE FROM records_notes_comments WHERE "record_id" = :recordId`,
               { 
                 replacements: { recordId: record.id },
                 type: QueryTypes.DELETE,
@@ -920,6 +1030,21 @@ export class SpaceService {
         
         // Commit the transaction
         await transaction.commit();
+        
+        if (isSuperUser && !isOwner && spaceOwnerId !== userId) {
+          try {
+            await NotificationService.createSpaceDeletionNotification(
+              space.id,
+              spaceOwnerId,
+              spaceName,
+              userId
+            );
+            console.log(`Space deletion notification sent to space owner: ${spaceOwnerId}`);
+          } catch (error) {
+            console.error('Error sending space deletion notification:', error);
+            
+          }
+        }
         
         console.log(`Successfully deleted space ${spaceId}`);
         return true;

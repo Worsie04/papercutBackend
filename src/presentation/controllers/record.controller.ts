@@ -4,6 +4,7 @@ import { RecordStatus } from '../../models/record.model';
 import { AppError } from '../middlewares/errorHandler';
 import { UploadService } from '../../services/upload.service';
 import { Cabinet } from '../../models/cabinet.model';
+import fileService from '../../services/file.service';
 
 export class RecordController {
   
@@ -84,69 +85,83 @@ export class RecordController {
 
   static async extractPdfFields(req: Request, res: Response) {
     try {
-      const file = req.file as Express.Multer.File;
-      if (!file || file.mimetype !== 'application/pdf') {
-        return res.status(400).json({ error: 'PDF file is required' });
+      const files = req.files as Express.Multer.File[];
+      if (!files || !Array.isArray(files) || files.length === 0) {
+        return res.status(400).json({ error: 'At least one PDF file is required' });
+      }
+
+      // Check if all files are PDFs
+      const nonPdfFiles = files.filter(file => file.mimetype !== 'application/pdf');
+      if (nonPdfFiles.length > 0) {
+        return res.status(400).json({ 
+          error: 'All files must be PDFs',
+          invalidFiles: nonPdfFiles.map(f => f.originalname)
+        });
       }
       
       const cabinetId = req.query.cabinetId as string;
       if (!cabinetId) {
         return res.status(400).json({ error: 'Cabinet ID is required' });
       }
-      
-      // Process PDF file to extract fields
-      const pdfData = await RecordService.processPdfFile(file);
-      
-      // If cabinet ID is provided, get cabinet fields for matching
-      let cabinetFields: any[] = [];
-      let fieldMatches: { extractedField: any; possibleMatches: { fieldId: any; fieldName: any; similarity: number }[] }[] = [];
-      
-      if (cabinetId) {
-        // Get cabinet with its custom fields
-        const cabinet = await Cabinet.findByPk(cabinetId);
-        if (cabinet && cabinet.customFields) {
-          cabinetFields = cabinet.customFields;
-          
-          // Match extracted fields with cabinet fields
-          // Simple matching based on field name similarity
-          fieldMatches = pdfData.extractedFields.map(extractedField => {
-            const matches = cabinetFields
-              .map(cabinetField => ({
-                cabinetField,
-                similarity: calculateStringSimilarity(
-                  extractedField.name.toLowerCase(),
-                  cabinetField.name.toLowerCase()
-                )
-              }))
-              .filter(match => match.similarity > 0.5) // Only keep reasonable matches
-              .sort((a, b) => b.similarity - a.similarity);
-            
-            return {
-              extractedField,
-              possibleMatches: matches.map(m => ({
-                fieldId: m.cabinetField.id,
-                fieldName: m.cabinetField.name,
-                similarity: m.similarity
-              }))
-            };
-          });
-        }
+
+      // Get cabinet with its custom fields
+      const cabinet = await Cabinet.findByPk(cabinetId);
+      if (!cabinet || !cabinet.customFields) {
+        return res.status(404).json({ error: 'Cabinet not found or has no custom fields' });
       }
-      
-      res.status(200).json({
-        success: true,
-        pageCount: pdfData.pageCount,
-        extractedFields: pdfData.extractedFields,
-        fieldMatches,
-        cabinetFields
+
+      const cabinetFields = cabinet.customFields;
+      let allExtractedFields: any[] = [];
+      let allFieldMatches: { extractedField: any; possibleMatches: { fieldId: any; fieldName: any; similarity: number }[] }[] = [];
+
+      // Process each PDF file
+      for (const file of files) {
+        // Process PDF file to extract fields
+        const pdfData = await RecordService.processPdfFile(file);
+        
+        // Add source file information to extracted fields
+        const extractedFieldsWithSource = pdfData.extractedFields.map(field => ({
+          ...field,
+          sourceFile: file.originalname
+        }));
+        
+        // Match extracted fields with cabinet fields
+        const fileFieldMatches = extractedFieldsWithSource.map(extractedField => {
+          const matches = cabinetFields
+            .map(cabinetField => ({
+              cabinetField,
+              similarity: calculateStringSimilarity(
+                extractedField.name.toLowerCase(),
+                cabinetField.name.toLowerCase()
+              )
+            }))
+            .filter(match => match.similarity > 0.3) // Only keep matches with similarity > 30%
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, 3) // Keep top 3 matches
+            .map(match => ({
+              fieldId: match.cabinetField.id,
+              fieldName: match.cabinetField.name,
+              similarity: match.similarity
+            }));
+
+          return {
+            extractedField,
+            possibleMatches: matches
+          };
+        });
+
+        // Add results from this file to overall results
+        allExtractedFields = [...allExtractedFields, ...extractedFieldsWithSource];
+        allFieldMatches = [...allFieldMatches, ...fileFieldMatches];
+      }
+
+      res.json({
+        extractedFields: allExtractedFields,
+        fieldMatches: allFieldMatches
       });
     } catch (error) {
-      console.error('Error extracting PDF fields:', error);
-      if (error instanceof AppError) {
-        res.status(error.statusCode).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: 'Failed to extract PDF fields' });
-      }
+      console.error('Error processing PDF files:', error);
+      res.status(500).json({ error: 'Failed to process PDF files' });
     }
   }
 
@@ -650,6 +665,66 @@ export class RecordController {
         res.status(error.statusCode).json({ error: error.message });
       } else {
         res.status(500).json({ error: 'Failed to get records waiting for approval' });
+      }
+    }
+  }
+
+  /**
+   * Create a record with files from the request
+   */
+  static async createRecordWithFiles(req: Request, res: Response) {
+    try {
+      const creatorId = req.user?.id;
+      
+      // Parse body
+      const { 
+        title, 
+        cabinetId, 
+        status, 
+        isTemplate, 
+        isActive, 
+        tags, 
+        customFields,
+        fileIds 
+      } = req.body;
+      
+      if (!creatorId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      
+      if (!title) {
+        return res.status(400).json({ error: 'Title is required' });
+      }
+      
+      if (!cabinetId) {
+        return res.status(400).json({ error: 'Cabinet ID is required' });
+      }
+      
+      // Parse JSON values if they're strings
+      const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : (tags || []);
+      const parsedCustomFields = typeof customFields === 'string' ? JSON.parse(customFields) : (customFields || {});
+      const parsedFileIds = typeof fileIds === 'string' ? JSON.parse(fileIds) : (fileIds || []);
+      
+      // Create record with associated files
+      const record = await RecordService.createRecordWithFiles({
+        title,
+        cabinetId,
+        creatorId,
+        customFields: parsedCustomFields,
+        status: status || RecordStatus.DRAFT,
+        isTemplate: isTemplate === 'true' || isTemplate === true,
+        isActive: isActive === 'true' || isActive === true || isActive === undefined,
+        tags: parsedTags,
+        fileIds: parsedFileIds
+      });
+      
+      res.status(201).json(record);
+    } catch (error) {
+      console.error('Error creating record with files:', error);
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: 'Failed to create record' });
       }
     }
   }

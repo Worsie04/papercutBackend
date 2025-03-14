@@ -49,6 +49,7 @@ Notification.init(
         key: 'id',
       },
       onDelete: 'CASCADE',
+      field: 'user_id',
     },
     title: {
       type: DataTypes.STRING,
@@ -69,16 +70,19 @@ Notification.init(
     entityType: {
       type: DataTypes.STRING,
       allowNull: true,
+      field: 'entity_type',
     },
     entityId: {
       type: DataTypes.UUID,
       allowNull: true,
+      field: 'entity_id',
     },
   },
   {
     sequelize,
     tableName: 'notifications',
     modelName: 'Notification',
+    underscored: true,
   }
 );
 

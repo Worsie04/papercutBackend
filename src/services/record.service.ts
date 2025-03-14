@@ -11,6 +11,7 @@ import { PdfFile } from '../models/pdf-file.model';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
+import fileService from './file.service';
 
 const { PDFExtract } = require('pdf.js-extract');
 const pdfExtract = new PDFExtract();
@@ -1391,5 +1392,117 @@ export class RecordService {
       ],
       order: [['createdAt', 'DESC']]
     });
+  }
+
+  /**
+   * Associate multiple files with a record
+   */
+  static async associateFilesWithRecord(recordId: string, fileIds: string[]) {
+    try {
+      // Validate that the record exists
+      const record = await Record.findByPk(recordId);
+      if (!record) {
+        throw new AppError(404, 'Record not found');
+      }
+
+      // Associate files with the record and mark them as allocated
+      return await fileService.associateFilesWithRecord(fileIds, recordId);
+    } catch (error) {
+      console.error('Error associating files with record:', error);
+      throw error;
+    }
+  }
+
+  // Modified createRecord to support multiple file IDs
+  static async createRecordWithFiles(data: {
+    title: string;
+    cabinetId: string;
+    creatorId: string;
+    customFields: { [key: string]: any };
+    status: RecordStatus;
+    isTemplate: boolean;
+    isActive: boolean;
+    tags: string[];
+    fileIds?: string[];
+  }) {
+    // Validate title
+    if (!data.title || !data.title.trim()) {
+      throw new AppError(400, 'Record title is required');
+    }
+    
+    // Validate cabinet exists and get its custom fields configuration
+    const cabinet = await Cabinet.findByPk(data.cabinetId);
+    if (!cabinet) {
+      throw new AppError(400, 'Cabinet not found');
+    }
+    
+    // Validate creator exists
+    const creator = await User.findByPk(data.creatorId);
+    if (!creator) {
+      throw new AppError(400, 'Creator not found');
+    }
+    
+    // Validate custom fields against cabinet configuration
+    const validatedFields = await RecordService.validateCustomFields(data.customFields, cabinet.customFields);
+    
+    // Find the first attachment field if any
+    let fileInfo = null;
+    for (const fieldId in validatedFields) {
+      const field = validatedFields[fieldId];
+      if (field.type === 'Attachment' && field.value) {
+        fileInfo = field.value;
+        break;
+      }
+    }
+    
+    // Start a transaction for the record creation
+    const transaction = await sequelize.transaction();
+    try {
+      // Create record with validated fields and file information
+      const record = await Record.create({
+        ...data,
+        title: data.title.trim(),
+        customFields: validatedFields,
+        lastModifiedBy: data.creatorId,
+        version: 1,
+        // Add file information if present
+        ...(fileInfo && {
+          fileName: fileInfo.fileName,
+          filePath: fileInfo.filePath,
+          fileSize: fileInfo.fileSize,
+          fileType: fileInfo.fileType,
+          fileHash: fileInfo.fileHash,
+        })
+      }, { transaction });
+      
+      // Associate files if provided
+      if (data.fileIds && data.fileIds.length > 0) {
+        // Create associations between the record and the files
+        const recordFiles = data.fileIds.map(fileId => ({
+          id: sequelize.literal('uuid_generate_v4()'),
+          recordId: record.id,
+          fileId: fileId
+        }));
+        
+        await sequelize.models.RecordFile.bulkCreate(recordFiles, { transaction });
+        
+        // Mark files as allocated
+        await sequelize.models.File.update(
+          { isAllocated: true },
+          { 
+            where: { id: data.fileIds },
+            transaction 
+          }
+        );
+      }
+      
+      // Commit the transaction
+      await transaction.commit();
+      return record;
+    } catch (error) {
+      // Rollback transaction in case of error
+      await transaction.rollback();
+      throw error;
+    }
   }
 }

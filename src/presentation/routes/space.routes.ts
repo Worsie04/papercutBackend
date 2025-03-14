@@ -5,34 +5,52 @@ import { upload } from '../middlewares/upload.middleware';
 
 const router = Router();
 
-router.use(authenticate(['user', 'admin', 'super_admin']));
+// Group routes by feature and apply middleware more efficiently
+const authenticatedRouter = Router();
+authenticatedRouter.use(authenticate(['user', 'admin', 'super_admin']));
 
-// Space routes 
-router.get('/', SpaceController.getAllSpaces);
-router.get('/available-users', SpaceController.getAvailableUsers);
-router.get('/getByStatus', SpaceController.getSpacesByStatus);
-// New endpoint for getting spaces created by the current user with a specific status
-router.get('/my-spaces', SpaceController.getMySpacesByStatus);
-// New endpoint for getting spaces waiting for the current user's approval
-router.get('/waiting-for-my-approval', SpaceController.getSpacesWaitingForMyApproval);
-// New endpoint for getting super users for approvers
-router.get('/superusers', SpaceController.getSuperUsers);
-router.post('/', upload.single('logo'), SpaceController.createSpace);
-router.get('/:id', SpaceController.getSpace);
-router.get('/:id/cabinets', SpaceController.getCabinets);
-// New endpoint for getting reassignment history
-router.get('/:id/reassignment-history', SpaceController.getReassignmentHistory);
-// Delete a space
-router.delete('/:id', SpaceController.deleteSpace);
+// Group related routes
+const memberRoutes = Router();
+const approvalRoutes = Router();
+
+// Space core routes
+authenticatedRouter
+  .route('/')
+  .get(SpaceController.getAllSpaces)
+  .post(upload.single('logo'), SpaceController.createSpace);
+
+// Space query routes
+authenticatedRouter
+  .get('/available-users', SpaceController.getAvailableUsers)
+  .get('/getByStatus', SpaceController.getSpacesByStatus)
+  .get('/my-spaces', SpaceController.getMySpacesByStatus)
+  .get('/waiting-for-my-approval', SpaceController.getSpacesWaitingForMyApproval)
+  .get('/superusers', SpaceController.getSuperUsers);
 
 // Member management routes
-router.post('/:id/members/invite', SpaceController.inviteMembers);
-router.post('/:id/members', SpaceController.addMember);
-router.delete('/:id/members/:userId', SpaceController.removeMember);
-router.patch('/:id/members/:userId/role', SpaceController.updateMemberRole);
+memberRoutes
+  .post('/:id/members/invite', SpaceController.inviteMembers)
+  .post('/:id/members', SpaceController.addMember)
+  .delete('/:id/members/:userId', SpaceController.removeMember)
+  .patch('/:id/members/:userId/role', SpaceController.updateMemberRole);
 
 // Approval management routes
-router.post('/:id/reassign', SpaceController.reassignApproval);
-router.post('/:id/resubmit', SpaceController.resubmitSpace);
+approvalRoutes
+  .post('/:id/reassign', SpaceController.reassignApproval)
+  .post('/:id/resubmit', SpaceController.resubmitSpace);
+
+// Space specific routes
+authenticatedRouter
+  .get('/:id', SpaceController.getSpace)
+  .get('/:id/cabinets', SpaceController.getCabinets)
+  .get('/:id/reassignment-history', SpaceController.getReassignmentHistory)
+  .delete('/:id', SpaceController.deleteSpace);
+
+// Mount sub-routers
+authenticatedRouter.use('/', memberRoutes);
+authenticatedRouter.use('/', approvalRoutes);
+
+// Mount main router
+router.use('/', authenticatedRouter);
 
 export default router;

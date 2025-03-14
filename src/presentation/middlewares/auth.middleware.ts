@@ -34,7 +34,7 @@ export const authenticate = (type?: UserType | UserType[]) => {
 
       //console.log('Using token:', token);
       const decoded = JwtUtil.verifyToken(token);
-      console.log('Decoded token:', decoded);
+      
 
       if (type) {
         if (Array.isArray(type)) {
@@ -42,7 +42,7 @@ export const authenticate = (type?: UserType | UserType[]) => {
           const hasValidType = type.some(t => 
             decoded.type === t || decoded.role === t
           );
-          console.log('hasValidType:', hasValidType);
+          
           if (!hasValidType) {
             throw new AppError(403, 'Unauthorized access');
           }

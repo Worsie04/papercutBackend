@@ -25,6 +25,7 @@ router.post('/assign-with-permissions', CabinetController.assignUsersWithPermiss
 router.get('/:id', CabinetController.getCabinet);
 router.post('/:id/approve', CabinetController.approveCabinet);
 router.post('/:id/reject', CabinetController.rejectCabinet);
+router.delete('/:id', CabinetController.deleteCabinet); // New endpoint for deleting a cabinet
 
 // Record routes
 router.get('/:cabinetId/records', RecordController.getCabinetRecords);

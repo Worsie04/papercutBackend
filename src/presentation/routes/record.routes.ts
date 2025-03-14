@@ -6,54 +6,66 @@ import { upload } from '../middlewares/upload.middleware';
 
 const router = Router();
 
-// Configure multer for memory storage
+// Centralize multer configuration
 const uploadMulter = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
+    files: 5 // Limit to 5 files
+  },
+  fileFilter: (req, file, cb) => {
+    // File type validation
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      cb(new Error('Invalid file type'));
+      return;
+    }
+    cb(null, true);
   }
 });
 
-// Apply auth middleware to all routes
-router.use(authenticate('user'));
+// Group routes by feature
+router.use(authenticate('user')); // Apply authentication globally
 
-// Record routes
-router.post('/', uploadMulter.any(), RecordController.createRecord);
-router.get('/', RecordController.getRecordsByStatus);
+// Create route groups
+const recordRoutes = Router();
+const fileRoutes = Router();
+const versionRoutes = Router();
 
-// PDF specific routes
-router.post('/extract-pdf-fields', uploadMulter.single('pdfFile'), RecordController.extractPdfFields);
-router.get('/:id/pdf', RecordController.getRecordWithPdf);
+// Basic record operations
+recordRoutes
+  .route('/')
+  .post(uploadMulter.any(), RecordController.createRecord)
+  .get(RecordController.getRecordsByStatus);
 
-// New endpoint for getting records created by the current user with a specific status
-router.get('/my-records', RecordController.getMyRecordsByStatus);
-// New endpoint for getting records waiting for the current user's approval
-router.get('/waiting-for-my-approval', RecordController.getRecordsWaitingForMyApproval);
-router.get('/:id', RecordController.getRecord);
-router.get('/file/:filePath', RecordController.getFileUrl);
-router.put('/:id/update', uploadMulter.any(), RecordController.updateRecord);
-router.put('/:id/approve', uploadMulter.any(), RecordController.approveRecord);
-router.put('/:id/reject', uploadMulter.any(), RecordController.rejectRecord);
-router.delete('/:id', RecordController.deleteRecord);
+recordRoutes
+  .route('/:id')
+  .get(RecordController.getRecord)
+  .put(uploadMulter.any(), RecordController.updateRecord)
+  .delete(RecordController.deleteRecord);
 
-// File version routes
-router.post(
-  '/:id/versions',
-  authenticate,
-  upload.single('file'),
-  RecordController.uploadNewVersion
-);
+// Status-related routes
+recordRoutes.get('/my-records', RecordController.getMyRecordsByStatus);
+recordRoutes.get('/waiting-for-my-approval', RecordController.getRecordsWaitingForMyApproval);
+recordRoutes.put('/:id/approve', uploadMulter.any(), RecordController.approveRecord);
+recordRoutes.put('/:id/reject', uploadMulter.any(), RecordController.rejectRecord);
 
-router.get(
-  '/:id/versions',
-  authenticate,
-  RecordController.getVersions
-);
+// File operations
+fileRoutes.post('/with-files', RecordController.createRecordWithFiles);
+fileRoutes.post('/extract-pdf-fields', uploadMulter.array('pdfFiles'), RecordController.extractPdfFields);
+fileRoutes.get('/:id/pdf', RecordController.getRecordWithPdf);
+fileRoutes.get('/file/:filePath', RecordController.getFileUrl);
 
-router.delete(
-  '/:id/versions/:versionId',
-  authenticate,
-  RecordController.deleteVersion
-);
+versionRoutes
+  .route('/:id/versions')
+  .post(authenticate, upload.single('file'), RecordController.uploadNewVersion) // Fixed missing auth
+  .get(authenticate, RecordController.getVersions); // Fixed missing auth
+
+versionRoutes.delete('/:id/versions/:versionId', authenticate, RecordController.deleteVersion); // Fixed missing auth
+
+// Mount sub-routers
+router.use('/', recordRoutes);
+router.use('/files', fileRoutes);
+router.use('/versions', versionRoutes);
 
 export default router;
