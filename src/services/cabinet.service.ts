@@ -9,6 +9,9 @@ import { SpaceMember } from '../models/space-member.model';
 import { CabinetMember } from '../models/cabinet-member.model';
 import { CabinetMemberPermission } from '../models/cabinet-member-permission.model';
 import { Op } from 'sequelize';
+import { ActivityService } from './activity.service';
+import { NotificationService } from './notification.service';
+import { Activity, ActivityType, ResourceType } from '../models/activity.model';
 
 interface CreateCabinetParams {
   name: string;
@@ -67,6 +70,43 @@ export class CabinetService {
       status: 'pending',
       isActive: true
     });
+
+    // Log cabinet creation activity
+    try {
+      await ActivityService.logActivity({
+        userId: data.createdById,
+        action: ActivityType.CREATE,
+        resourceType: ResourceType.CABINET,
+        resourceId: cabinet.id,
+        resourceName: cabinet.name,
+        details: `Cabinet created in space ${space.name}`
+      });
+    } catch (error) {
+      console.error('Failed to log cabinet creation activity:', error);
+      // Don't fail the cabinet creation if activity logging fails
+    }
+
+    // Send notifications to approvers if needed
+    if (data.approvers && data.approvers.length > 0) {
+      try {
+        // Get creator information for the notification
+        const creator = await User.findByPk(data.createdById);
+        const creatorName = creator ? `${creator.firstName} ${creator.lastName}` : 'A user';
+        
+        // Send notification to each approver
+        for (const approver of data.approvers) {
+          await NotificationService.createCabinetCreationNotification(
+            approver.userId,
+            cabinet.id,
+            cabinet.name,
+            creatorName
+          );
+        }
+      } catch (error) {
+        console.error('Error sending cabinet creation notifications:', error);
+        // We don't want to fail the cabinet creation if notifications fail
+      }
+    }
 
     return cabinet;
   }
@@ -252,7 +292,13 @@ export class CabinetService {
   }
 
   static async approveCabinet(id: string, userId: string) {
-    const cabinet = await Cabinet.findByPk(id);
+    const cabinet = await Cabinet.findByPk(id, {
+      include: [{
+        model: User,
+        as: 'createdBy',
+        attributes: ['id', 'firstName', 'lastName']
+      }]
+    });
     
     if (!cabinet) {
       throw new AppError(404, 'Cabinet not found');
@@ -275,11 +321,46 @@ export class CabinetService {
       approvedAt: new Date()
     });
 
+    // Log cabinet approval activity
+    try {
+      await ActivityService.logActivity({
+        userId,
+        action: ActivityType.APPROVE,
+        resourceType: ResourceType.CABINET,
+        resourceId: id,
+        resourceName: cabinet.name,
+        details: 'Cabinet approved'
+      });
+    } catch (error) {
+      console.error('Failed to log cabinet approval activity:', error);
+    }
+    
+    // Send notification to the cabinet owner
+    if (cabinet.createdBy) {
+      try {
+        await NotificationService.createCabinetApprovalNotification(
+          cabinet.createdBy.id,
+          id,
+          cabinet.name
+        );
+        console.log(`Approval notification sent to cabinet creator: ${cabinet.createdBy.id}`);
+      } catch (error) {
+        console.error('Error sending cabinet approval notification:', error);
+        // We don't want to fail the cabinet approval if the notification fails
+      }
+    }
+
     return cabinet;
   }
 
   static async rejectCabinet(id: string, userId: string, reason: string) {
-    const cabinet = await Cabinet.findByPk(id);
+    const cabinet = await Cabinet.findByPk(id, {
+      include: [{
+        model: User,
+        as: 'createdBy',
+        attributes: ['id', 'firstName', 'lastName']
+      }]
+    });
     
     if (!cabinet) {
       throw new AppError(404, 'Cabinet not found');
@@ -302,6 +383,36 @@ export class CabinetService {
       rejectedAt: new Date(),
       rejectionReason: reason
     });
+
+    // Log cabinet rejection activity
+    try {
+      await ActivityService.logActivity({
+        userId,
+        action: ActivityType.REJECT,
+        resourceType: ResourceType.CABINET,
+        resourceId: id,
+        resourceName: cabinet.name,
+        details: reason || 'Cabinet rejected'
+      });
+    } catch (error) {
+      console.error('Failed to log cabinet rejection activity:', error);
+    }
+    
+    // Send notification to the cabinet owner
+    if (cabinet.createdBy) {
+      try {
+        await NotificationService.createCabinetRejectionNotification(
+          cabinet.createdBy.id,
+          id,
+          cabinet.name,
+          reason
+        );
+        console.log(`Rejection notification sent to cabinet creator: ${cabinet.createdBy.id}`);
+      } catch (error) {
+        console.error('Error sending cabinet rejection notification:', error);
+        // We don't want to fail the cabinet rejection if the notification fails
+      }
+    }
 
     return cabinet;
   }
@@ -351,6 +462,24 @@ export class CabinetService {
         transaction,
         ignoreDuplicates: true // Skip if the assignment already exists
       });
+      
+      // Log cabinet assignment activities
+      try {
+        for (const cabinet of cabinets) {
+          for (const userId of userIds) {
+            await ActivityService.logActivity({
+              userId,
+              action: ActivityType.REASSIGN,
+              resourceType: ResourceType.CABINET,
+              resourceId: cabinet.id,
+              resourceName: cabinet.name,
+              details: 'User assigned to cabinet'
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to log cabinet assignment activity:', error);
+      }
     });
   }
 
@@ -424,11 +553,91 @@ export class CabinetService {
         }
       );
 
-      await transaction.commit();
+      // Log cabinet permissions assignments
+      try {
+        const cabinetMap = new Map(cabinets.map(cabinet => [cabinet.id, cabinet]));
+        for (const assignment of assignments) {
+          const cabinet = cabinetMap.get(assignment.cabinetId);
+          if (cabinet) {
+            await ActivityService.logActivity({
+              userId: assignment.userId,
+              action: ActivityType.UPDATE_PERMISSIONS,
+              resourceType: ResourceType.CABINET,
+              resourceId: assignment.cabinetId,
+              resourceName: cabinet.name,
+              details: `Cabinet permissions updated to role: ${assignment.role}`
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to log cabinet permissions activity:', error);
+      }
 
+      await transaction.commit();
       return true;
     } catch (error) {
       await transaction.rollback();
+      throw error;
+    }
+  }
+  
+  static async deleteCabinet(id: string, userId: string): Promise<boolean> {
+    try {
+      // 1. Verify the cabinet exists
+      const cabinet = await Cabinet.findByPk(id);
+      
+      if (!cabinet) {
+        throw new Error('Cabinet not found');
+      }
+
+      // Store cabinet name for logging before deletion
+      const cabinetName = cabinet.name;
+      
+      // 2. Delete the cabinet and related records using a transaction
+      const transaction = await sequelize.transaction();
+      
+      try {
+        // Delete cabinet members
+        await CabinetMember.destroy({
+          where: { cabinetId: id },
+          transaction
+        });
+
+        // Delete cabinet member permissions
+        await CabinetMemberPermission.destroy({
+          where: { cabinetId: id },
+          transaction
+        });
+
+        // Delete cabinet (will cascade to other records as defined in your models)
+        await cabinet.destroy({ transaction });
+        
+        // Commit the transaction
+        await transaction.commit();
+        
+        // Log cabinet deletion activity after successful deletion
+        try {
+          await ActivityService.logActivity({
+            userId,
+            action: ActivityType.DELETE,
+            resourceType: ResourceType.CABINET,
+            resourceId: id,
+            resourceName: cabinetName,
+            details: 'Cabinet deleted'
+          });
+        } catch (error) {
+          console.error('Failed to log cabinet deletion activity:', error);
+        }
+        
+        return true;
+      } catch (error) {
+        // Rollback the transaction if any operation fails
+        await transaction.rollback();
+        console.error('Error during cabinet deletion:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error deleting cabinet:', error);
       throw error;
     }
   }

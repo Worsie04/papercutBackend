@@ -3,6 +3,16 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Create the ENUM type for user_type if it doesn't exist
+    await queryInterface.sequelize.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_organization_members_user_type') THEN
+          CREATE TYPE "enum_organization_members_user_type" AS ENUM ('user', 'admin');
+        END IF;
+      END$$;
+    `);
+
     // Create organization_members table
     await queryInterface.createTable('organization_members', {
       id: {
@@ -41,6 +51,11 @@ module.exports = {
         ),
         allowNull: false,
         defaultValue: 'member_full',
+      },
+      user_type: {
+        type: Sequelize.ENUM('user', 'admin'),
+        allowNull: false,
+        defaultValue: 'user'
       },
       custom_permissions: {
         type: Sequelize.JSON,
@@ -87,9 +102,13 @@ module.exports = {
     await queryInterface.addIndex('organization_members', ['user_id']);
     await queryInterface.addIndex('organization_members', ['role']);
     await queryInterface.addIndex('organization_members', ['status']);
+    await queryInterface.addIndex('organization_members', ['user_type']);
   },
 
   async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('organization_members');
+    await queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_organization_members_role";');
+    await queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_organization_members_status";');
+    await queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_organization_members_user_type";');
   }
 }; 

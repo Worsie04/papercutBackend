@@ -2,6 +2,9 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
+    // Ensure the uuid-ossp extension is available
+    await queryInterface.sequelize.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
+    
     await queryInterface.createTable('user_roles', {
       id: {
         type: Sequelize.UUID,
@@ -36,7 +39,17 @@ module.exports = {
         type: Sequelize.DATE,
         allowNull: false,
       },
+      deleted_at: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
     });
+
+    // Set the database-level default for the id column
+    await queryInterface.sequelize.query(`
+      ALTER TABLE user_roles 
+      ALTER COLUMN id SET DEFAULT uuid_generate_v4();
+    `);
 
     // Add a unique constraint to prevent duplicate user-role assignments
     await queryInterface.addConstraint('user_roles', {

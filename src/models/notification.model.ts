@@ -8,7 +8,7 @@ interface NotificationAttributes {
   userId: string;
   title: string;
   message: string;
-  type: 'space_approval' | 'space_rejection' | 'space_reassignment' | 'space_creation' | 'space_deletion';
+  type: 'space_approval' | 'space_rejection' | 'space_reassignment' | 'space_creation' | 'space_deletion' | 'cabinet_approval' | 'cabinet_rejection' | 'cabinet_reassignment' | 'cabinet_creation' | 'cabinet_deletion';
   read: boolean;
   entityType?: string;
   entityId?: string;
@@ -23,7 +23,7 @@ export class Notification extends BaseModel implements NotificationAttributes {
   public userId!: string;
   public title!: string;
   public message!: string;
-  public type!: 'space_approval' | 'space_rejection' | 'space_reassignment' | 'space_creation' | 'space_deletion';
+  public type!: 'space_approval' | 'space_rejection' | 'space_reassignment' | 'space_creation' | 'space_deletion' | 'cabinet_approval' | 'cabinet_rejection' | 'cabinet_reassignment' | 'cabinet_creation' | 'cabinet_deletion';
   public read!: boolean;
   public entityType?: string;
   public entityId?: string;

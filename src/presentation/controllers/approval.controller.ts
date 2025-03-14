@@ -1,17 +1,21 @@
 import { Request, Response } from 'express';
-import { CabinetService } from '../../services/cabinet.service';
 import { SpaceService } from '../../services/space.service';
+import { CabinetService } from '../../services/cabinet.service';
 import { SpaceCommentService } from '../../services/space-comment.service';
+import { AuthenticatedRequest } from '../../types/express';
 
 export class ApprovalController {
-  static async getApprovals(req: Request, res: Response) {
+  /**
+   * Get all pending approvals
+   */
+  static async getApprovals(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.id;
-      
+
       if (!userId) {
         return res.status(401).json({ error: 'User not authenticated' });
       }
-      
+
       // Fetch pending cabinet creation requests
       const pendingCabinets = await CabinetService.getPendingApprovals(userId);
       const cabinetRequests = pendingCabinets.map(cabinet => ({
@@ -25,7 +29,7 @@ export class ApprovalController {
 
       // Fetch pending space creation requests
       const pendingSpaces = await SpaceService.getPendingApprovals(userId);
-      console.log('pendingSpaces:', pendingSpaces);
+console.log('pendingSpaces:', pendingSpaces);
       const spaceRequests = pendingSpaces.map(space => ({
         id: space.id,
         type: 'space',
@@ -48,15 +52,17 @@ export class ApprovalController {
     }
   }
 
-  // New method to get current user's created items pending approval
-  static async getMyPendingApprovals(req: Request, res: Response) {
+  /**
+   * Get pending approvals that were created by the user
+   */
+  static async getMyPendingApprovals(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.id;
-      
+
       if (!userId) {
         return res.status(401).json({ error: 'User not authenticated' });
       }
-      
+
       // Fetch pending cabinet creation requests created by current user
       const pendingCabinets = await CabinetService.getMyPendingApprovals(userId);
       const cabinetRequests = pendingCabinets.map(cabinet => ({
@@ -71,7 +77,7 @@ export class ApprovalController {
 
       // Fetch pending space creation requests created by current user
       const pendingSpaces = await SpaceService.getMyPendingApprovals(userId);
-      const spaceRequests = pendingSpaces.map(space => ({
+const spaceRequests = pendingSpaces.map(space => ({
         id: space.id,
         type: 'space',
         name: space.name,
@@ -90,19 +96,21 @@ export class ApprovalController {
       res.json(allRequests);
     } catch (error) {
       console.error('Error fetching my pending approvals:', error);
-      res.status(500).json({ error: 'Failed to fetch my pending approvals' });
+      res.status(500).json({ error: 'Failed to fetch your pending approvals' });
     }
   }
 
-  // New method to get items waiting for current user's approval
-  static async getApprovalsWaitingForMe(req: Request, res: Response) {
+  /**
+   * Get approvals that are waiting for the user
+   */
+  static async getApprovalsWaitingForMe(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.id;
-      
+
       if (!userId) {
         return res.status(401).json({ error: 'User not authenticated' });
       }
-      
+
       // Fetch cabinet creation requests waiting for current user's approval
       const pendingCabinets = await CabinetService.getApprovalsWaitingFor(userId);
       const cabinetRequests = pendingCabinets.map(cabinet => ({
@@ -117,7 +125,7 @@ export class ApprovalController {
 
       // Fetch space creation requests waiting for current user's approval
       const pendingSpaces = await SpaceService.getApprovalsWaitingFor(userId);
-      const spaceRequests = pendingSpaces.map(space => ({
+const spaceRequests = pendingSpaces.map(space => ({
         id: space.id,
         type: 'space',
         name: space.name,
@@ -136,14 +144,17 @@ export class ApprovalController {
       res.json(allRequests);
     } catch (error) {
       console.error('Error fetching approvals waiting for me:', error);
-      res.status(500).json({ error: 'Failed to fetch approvals waiting for me' });
+      res.status(500).json({ error: 'Failed to fetch approvals waiting for you' });
     }
   }
 
+  /**
+   * Approve a request (space or cabinet)
+   */
   static async approveRequest(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { type, comment } = req.body;
+      const { type } = req.body;
       const userId = req.user?.id;
 
       if (!userId) {
@@ -153,9 +164,10 @@ export class ApprovalController {
       if (type === 'cabinet') {
         await CabinetService.approveCabinet(id, userId);
       } else if (type === 'space') {
-        await SpaceService.approveSpace(id);
+        await SpaceService.approveSpace(id, userId);
         
-        // If a comment was provided, store it
+        // Store the approval as a comment
+        const comment = req.body.comment;
         if (comment && comment.trim()) {
           await SpaceCommentService.createComment({
             spaceId: id,
@@ -175,6 +187,9 @@ export class ApprovalController {
     }
   }
 
+  /**
+   * Reject a request (space or cabinet)
+   */
   static async rejectRequest(req: Request, res: Response) {
     try {
       const { id } = req.params;

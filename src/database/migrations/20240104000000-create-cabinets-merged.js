@@ -40,6 +40,25 @@ module.exports = {
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
       },
+      created_by_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'users',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'RESTRICT',
+      },
+      status: {
+        type: Sequelize.ENUM('pending', 'approved', 'rejected'),
+        allowNull: false,
+        defaultValue: 'pending',
+      },
+      rejection_reason: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
       tags: {
         type: Sequelize.ARRAY(Sequelize.STRING),
         allowNull: false,
@@ -101,5 +120,6 @@ module.exports = {
 
   down: async (queryInterface, Sequelize) => {
     await queryInterface.dropTable('cabinets');
+    await queryInterface.sequelize.query('DROP TYPE IF EXISTS enum_cabinets_status;');
   }
 }; 

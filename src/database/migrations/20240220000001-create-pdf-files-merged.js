@@ -1,4 +1,5 @@
 'use strict';
+
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     await queryInterface.createTable('pdf_files', {
@@ -52,12 +53,18 @@ module.exports = {
       updated_at: {
         type: Sequelize.DATE,
         allowNull: false
+      },
+      deleted_at: {
+        type: Sequelize.DATE,
+        allowNull: true
       }
     });
+    
     // Add index for faster record lookup
     await queryInterface.addIndex('pdf_files', ['record_id']);
   },
+  
   down: async (queryInterface, Sequelize) => {
     await queryInterface.dropTable('pdf_files');
   }
-};
+}; 

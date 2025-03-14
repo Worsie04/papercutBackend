@@ -175,7 +175,6 @@ export class NotificationService {
     const deletedByName = deletedByUser 
       ? `${deletedByUser.firstName} ${deletedByUser.lastName}` 
       : 'A user';
-
     return this.createNotification({
       userId,
       title: 'Space Deleted',
@@ -183,6 +182,109 @@ export class NotificationService {
       type: 'space_deletion',
       entityType: 'space',
       entityId: spaceId
+    });
+  }
+  
+  // Cabinet-specific notification methods
+  static async createCabinetCreationNotification(
+    approverUserId: string,
+    cabinetId: string,
+    cabinetName: string,
+    creatorName: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: approverUserId,
+      title: 'New Cabinet Awaiting Approval',
+      message: `${creatorName} has created a new cabinet "${cabinetName}" that needs your approval.`,
+      type: 'cabinet_creation',
+      entityType: 'cabinet',
+      entityId: cabinetId
+    });
+  }
+
+  static async createCabinetApprovalNotification(
+    creatorUserId: string,
+    cabinetId: string,
+    cabinetName: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: creatorUserId,
+      title: 'Cabinet Approved',
+      message: `Your cabinet "${cabinetName}" has been approved!`,
+      type: 'cabinet_approval',
+      entityType: 'cabinet',
+      entityId: cabinetId
+    });
+  }
+
+  static async createCabinetRejectionNotification(
+    creatorUserId: string,
+    cabinetId: string,
+    cabinetName: string,
+    reason: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: creatorUserId,
+      title: 'Cabinet Rejected',
+      message: `Your cabinet "${cabinetName}" was rejected. Reason: ${reason}`,
+      type: 'cabinet_rejection',
+      entityType: 'cabinet',
+      entityId: cabinetId
+    });
+  }
+
+  static async createCabinetReassignmentNotification(
+    assigneeUserId: string,
+    cabinetId: string,
+    cabinetName: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: assigneeUserId,
+      title: 'Cabinet Approval Assigned to You',
+      message: `A cabinet "${cabinetName}" has been reassigned to you for approval.`,
+      type: 'cabinet_reassignment',
+      entityType: 'cabinet',
+      entityId: cabinetId
+    });
+  }
+
+  static async createCabinetDeletionNotification(
+    cabinetId: string,
+    userId: string,
+    cabinetName: string,
+    deletedById: string
+  ): Promise<Notification> {
+    const deletedByUser = await User.findByPk(deletedById, {
+      attributes: ['firstName', 'lastName']
+    });
+    
+    const deletedByName = deletedByUser 
+      ? `${deletedByUser.firstName} ${deletedByUser.lastName}` 
+      : 'A user';
+    
+    return this.createNotification({
+      userId,
+      title: 'Cabinet Deleted',
+      message: `${deletedByName} has deleted the cabinet "${cabinetName}".`,
+      type: 'cabinet_deletion',
+      entityType: 'cabinet',
+      entityId: cabinetId
+    });
+  }
+
+  static async createCabinetAssignmentNotification(
+    assignedUserId: string,
+    cabinetId: string,
+    cabinetName: string,
+    assignerName: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: assignedUserId,
+      title: 'Added to Cabinet',
+      message: `${assignerName} has added you to cabinet "${cabinetName}".`,
+      type: 'cabinet_reassignment',
+      entityType: 'cabinet',
+      entityId: cabinetId
     });
   }
 }

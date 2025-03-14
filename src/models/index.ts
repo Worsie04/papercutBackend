@@ -15,6 +15,7 @@ import { SpaceCommentReject } from './space-comment-reject.model';
 import { SpaceReassignment } from './space-reassignment.model';
 import File from './file.model';
 import RecordFile from './record-file.model';
+import { Activity } from './activity.model';
 
 export const initializeModels = (sequelize: Sequelize) => {
   // Initialize all models first
@@ -34,7 +35,8 @@ export const initializeModels = (sequelize: Sequelize) => {
     SpaceCommentReject,
     SpaceReassignment,
     File,
-    RecordFile
+    RecordFile,
+    Activity
   };
 
   return models;
@@ -57,5 +59,6 @@ export {
   SpaceCommentReject,
   SpaceReassignment,
   File,
-  RecordFile
+  RecordFile,
+  Activity
 };

@@ -37,6 +37,16 @@ module.exports = {
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL'
       },
+      permissions: {
+        type: Sequelize.JSONB,
+        allowNull: false,
+        defaultValue: {
+          readRecords: false,
+          manageCabinet: false,
+          downloadFiles: false,
+          exportTables: false,
+        },
+      },
       members_count: {
         type: Sequelize.INTEGER,
         defaultValue: 0

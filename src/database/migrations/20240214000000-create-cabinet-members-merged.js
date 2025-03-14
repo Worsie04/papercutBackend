@@ -28,7 +28,7 @@ module.exports = {
         onDelete: 'CASCADE',
       },
       role: {
-        type: Sequelize.ENUM('owner', 'member', 'viewer'),
+        type: Sequelize.ENUM('owner', 'member', 'viewer', 'member_full'),
         allowNull: false,
         defaultValue: 'member',
       },
@@ -68,5 +68,6 @@ module.exports = {
 
   async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('cabinet_members');
+    await queryInterface.sequelize.query('DROP TYPE IF EXISTS enum_cabinet_members_role;');
   }
-};
+}; 

@@ -13,6 +13,8 @@ import { SpaceCommentService } from './space-comment.service';
 import { SpaceReassignment } from '../models/space-reassignment.model';
 import { Record as RecordModel } from '../models/record.model';
 import { NotificationService } from './notification.service';
+import { ActivityService } from './activity.service';
+import { ActivityType, ResourceType } from '../models/activity.model';
 
 interface CreateSpaceParams {
   name: string;
@@ -150,6 +152,14 @@ export class SpaceService {
 
       return newSpace;
     });
+
+    // Log space creation activity
+    try {
+      await ActivityService.logSpaceCreation(data.ownerId, space.id, space.name);
+    } catch (error) {
+      console.error('Failed to log space creation activity:', error);
+      // Don't fail the space creation if activity logging fails
+    }
 
     // Send notifications to approvers if approval is required
     if (data.requireApproval && Array.isArray(data.approvers) && data.approvers.length > 0) {
@@ -359,7 +369,7 @@ export class SpaceService {
     }
   }
 
-  static async approveSpace(spaceId: string) {
+  static async approveSpace(spaceId: string, approverId: string) {
     try {
       const space = await Space.findByPk(spaceId, {
         include: [{
@@ -374,6 +384,13 @@ export class SpaceService {
       }
 
       await space.update({ status: 'approved' });
+      
+      // Log space approval activity
+      try {
+        await ActivityService.logSpaceApproval(approverId, space.id, space.name);
+      } catch (error) {
+        console.error('Failed to log space approval activity:', error);
+      }
       
       // Send notification to the space owner
       if (space.owner) {
@@ -416,6 +433,13 @@ export class SpaceService {
         rejectionReason: reason,
         rejectedBy
       });
+      
+      // Log space rejection activity
+      try {
+        await ActivityService.logSpaceRejection(rejectedBy, space.id, space.name, reason);
+      } catch (error) {
+        console.error('Failed to log space rejection activity:', error);
+      }
       
       // Send notification to the space owner
       if (space.owner) {
@@ -468,6 +492,20 @@ export class SpaceService {
         message: message || 'Space resubmitted for approval.',
         type: 'update'
       });
+      
+      // Log space resubmission activity
+      try {
+        await ActivityService.logActivity({
+          userId,
+          action: ActivityType.RESUBMIT,
+          resourceType: ResourceType.SPACE,
+          resourceId: spaceId,
+          resourceName: space.name,
+          details: message || 'Space resubmitted for approval.'
+        });
+      } catch (error) {
+        console.error('Failed to log space resubmission activity:', error);
+      }
       
       // Send notifications to approvers
       if (space.approvers && Array.isArray(space.approvers) && space.approvers.length > 0) {
@@ -788,6 +826,21 @@ export class SpaceService {
           message: message || 'Approval reassigned'
         }, { transaction });
         
+        // Log reassignment activity
+        try {
+          const space = await Space.findByPk(spaceId);
+          if (space) {
+            await ActivityService.logSpaceReassignment(
+              currentUserId, 
+              spaceId,
+              space.name,
+              assigneeId
+            );
+          }
+        } catch (error) {
+          console.error('Failed to log space reassignment activity:', error);
+        }
+        
         // Commit the transaction if all operations succeed
         await transaction.commit();
         
@@ -923,7 +976,7 @@ export class SpaceService {
         throw new Error('You do not have permission to delete this space');
       }
 
-      // Store space name for notifications before deletion
+      // Store space name for logging before deletion
       const spaceName = space.name;
       const spaceOwnerId = space.ownerId;
       
@@ -1031,6 +1084,14 @@ export class SpaceService {
         // Commit the transaction
         await transaction.commit();
         
+        // Log space deletion activity after successful deletion
+        try {
+          await ActivityService.logSpaceDeletion(userId, spaceId, spaceName);
+        } catch (error) {
+          console.error('Failed to log space deletion activity:', error);
+        }
+        
+        // Send notification if needed
         if (isSuperUser && !isOwner && spaceOwnerId !== userId) {
           try {
             await NotificationService.createSpaceDeletionNotification(

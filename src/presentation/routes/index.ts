@@ -12,6 +12,7 @@ import groupRoutes from './group.routes';
 import notificationRoutes from './notification.routes';
 import fileRoutes from './file.routes';
 import dashboardRoutes from './dashboard.routes';
+import activityRoutes from './activity.routes';
 
 const router = Router();
 
@@ -32,6 +33,7 @@ router.use(`${API_VERSION}/groups`, groupRoutes);
 router.use(`${API_VERSION}/notifications`, notificationRoutes);
 router.use(`${API_VERSION}/files`, fileRoutes);
 router.use(`${API_VERSION}/dashboard`, dashboardRoutes);
+router.use(`${API_VERSION}/activities`, activityRoutes);
 
 // Health check endpoint
 router.get(`${API_VERSION}/health`, (req, res) => {
