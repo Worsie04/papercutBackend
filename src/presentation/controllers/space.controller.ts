@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { SpaceService } from '../../services/space.service';
 import { AppError } from '../middlewares/errorHandler';
 import { CabinetService } from '../../services/cabinet.service';
+import { SpaceMember as SpaceMemberModel } from '../../models/space-member.model';
+import { Op } from 'sequelize';
+import { sequelize } from '../../infrastructure/database/sequelize';
 
 // Constants and Types
 const VALID_ROLES = ['member', 'co-owner', 'readonly'] as const;
@@ -19,6 +22,12 @@ interface SpaceMember {
   SpaceMember?: {
     role: SpaceRole;
   };
+}
+
+interface SpaceMemberData {
+  userId: string;
+  role?: string;
+  permissions?: string[];
 }
 
 export class SpaceController {
@@ -89,10 +98,11 @@ export class SpaceController {
         tags: req.body.tags ? JSON.parse(req.body.tags) : [],
         users: req.body.users ? JSON.parse(req.body.users) : [],
         approvers: req.body.approvers ? JSON.parse(req.body.approvers) : [],
-        requireApproval: req.body.requireApproval === 'true',
+        requireApproval: req.body.requireApproval,
         logo: (req as any).file,
         ownerId: userId,
       };
+      console.log(parsedBody)
 
       const space = await SpaceService.createSpace(parsedBody);
       res.status(201).json(space);
@@ -284,15 +294,65 @@ export class SpaceController {
   }
 
   static async resubmitSpace(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    const transaction = await sequelize.transaction();
+    
     try {
+      const { id: spaceId } = req.params;
+      const userId = SpaceController.validateUser(req);
+      const { message, spaceData } = req.body;
+
+      // First resubmit the space to change its status
       const space = await SpaceService.resubmitSpace(
-        req.params.id,
-        req.body.message?.toString() || '',
-        SpaceController.validateUser(req)
+        spaceId,
+        message?.toString() || '',
+        userId
       );
+
+      // If spaceData is provided, update the space details
+      if (spaceData) {
+        // Update basic space information
+        await space.update({
+          name: spaceData.name,
+          company: spaceData.company,
+          country: spaceData.country,
+          tags: spaceData.tags || [],
+          settings: {
+            ...space.settings,
+            userGroup: spaceData.userGroup
+          }
+        }, { transaction });
+
+        // Update members if provided
+        if (spaceData.members && Array.isArray(spaceData.members)) {
+          // Remove all existing members except the owner
+          await SpaceMemberModel.destroy({
+            where: { 
+              spaceId,
+              userId: { [Op.ne]: space.ownerId } // Don't remove the owner
+            },
+            transaction
+          });
+
+          // Add new members
+          const memberPromises = spaceData.members
+            .filter((member: SpaceMemberData) => member.userId !== space.ownerId) // Skip owner as they're already a member
+            .map((member: SpaceMemberData) => 
+              SpaceMemberModel.create({
+                spaceId,
+                userId: member.userId,
+                role: member.role || 'member',
+                permissions: member.permissions || []
+              }, { transaction })
+            );
+
+          await Promise.all(memberPromises);
+        }
+      }
       
+      await transaction.commit();
       res.status(200).json({ message: 'Space resubmitted successfully', space });
     } catch (error) {
+      await transaction.rollback();
       next(error);
     }
   }

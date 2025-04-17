@@ -25,7 +25,8 @@ export enum ActivityStatus {
   COMPLETED = 'completed',
   PENDING = 'pending',
   REJECTED = 'rejected',
-  DEFAULT = 'default'
+  DEFAULT = 'default',
+  REASSIGNED = 'reassigned',
 }
 
 export class Activity extends Model {

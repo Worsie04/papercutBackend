@@ -202,6 +202,22 @@ export class NotificationService {
     });
   }
 
+  static async createCabinetResubmittedlNotification(
+    creatorUserId: string,
+    cabinetId: string,
+    cabinetName: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: creatorUserId,
+      title: 'Cabinet Resubmitted for Approval',
+      message: `Your cabinet "${cabinetName}" has been resubmitted!`,
+      type: 'cabinet_resubmitted',
+      entityType: 'cabinet',
+      entityId: cabinetId
+    });
+  }
+
+
   static async createCabinetApprovalNotification(
     creatorUserId: string,
     cabinetId: string,
@@ -287,4 +303,181 @@ export class NotificationService {
       entityId: cabinetId
     });
   }
+
+  static async createRecordApprovalNotification(
+    creatorUserId: string,
+    recordId: string,
+    recordTitle: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: creatorUserId,
+      title: 'Record Approved',
+      message: `Your record "${recordTitle}" has been approved!`,
+      type: 'record_approval',
+      entityType: 'record',
+      entityId: recordId
+    });
+  }
+
+  static async createRecordRejectionNotification(
+    creatorUserId: string,
+    recordId: string,
+    recordTitle: string,
+    reason: string
+  ): Promise<Notification> {
+    return this.createNotification({
+      userId: creatorUserId,
+      title: 'Record Rejected',
+      message: `Your record "${recordTitle}" was rejected. Reason: ${reason}`,
+      type: 'record_rejection',
+      entityType: 'record',
+      entityId: recordId
+    });
+  }
+
+
+
+  static async createTemplateShareNotification(
+    sharedWithUserId: string, // User receiving the notification
+    sharedByUserName: string, // Name of the user who shared
+    templateId: string,       // ID of the template
+    templateName: string    // Name of the template
+): Promise<void> { // Return void, handle errors internally for now
+    try {
+        await this.createNotification({
+          userId: sharedWithUserId,
+          title: 'Template Shared', // Concise title
+          message: `${sharedByUserName} shared the template "${templateName || 'Untitled Template'}" with you.`,
+          type: 'template_share', // Specific type for this event
+          entityType: 'template',   // The entity type involved
+          entityId: templateId,     // The specific entity ID
+          // read: false is the default
+        });
+        console.log(`Template share notification created for user ${sharedWithUserId}`);
+    } catch (error) {
+        console.error(`Error creating template share notification for user ${sharedWithUserId}:`, error);
+    }
+  }
+
+  static async createLetterReviewRequestNotification(
+    reviewerUserId: string,
+    letterId: string,
+    letterName: string,
+    submitterName: string
+  ): Promise<Notification | void> { // Return void or Notification based on error handling preference
+    try {
+      return await this.createNotification({
+        userId: reviewerUserId,
+        title: 'Letter Review Request',
+        message: `${submitterName} submitted the letter "${letterName || 'Untitled Letter'}" for your review.`,
+        type: 'letter_review_request', // Use the new type
+        entityType: 'letter',
+        entityId: letterId
+      });
+    } catch (error) {
+        console.error(`Error creating letter review request notification for reviewer ${reviewerUserId}, letter ${letterId}:`, error);
+        // Decide how to handle: return void, throw, return null?
+    }
+  }
+
+  static async createLetterReviewApprovedNotification(
+    submitterUserId: string,
+    letterId: string,
+    letterName: string,
+    reviewerName?: string
+  ): Promise<Notification | void> {
+    const message = reviewerName
+        ? `Your letter "${letterName || 'Untitled Letter'}" has been approved by reviewer ${reviewerName}.`
+        : `Your letter "${letterName || 'Untitled Letter'}" has passed the review stage.`;
+    try {
+      return await this.createNotification({
+        userId: submitterUserId,
+        title: 'Letter Review Approved',
+        message: message,
+        type: 'letter_review_approved',
+        entityType: 'letter',
+        entityId: letterId
+      });
+    } catch (error) {
+        console.error(`Error creating letter review approved notification for submitter ${submitterUserId}, letter ${letterId}:`, error);
+    }
+  }
+
+  static async createLetterReviewRejectedNotification(
+    submitterUserId: string,
+    letterId: string,
+    letterName: string,
+    reason: string,
+    reviewerName?: string // Optional: Name of the reviewer
+  ): Promise<Notification | void> {
+     const message = reviewerName
+        ? `Reviewer ${reviewerName} rejected your letter "${letterName || 'Untitled Letter'}". Reason: ${reason || 'No reason provided.'}`
+        : `Your letter "${letterName || 'Untitled Letter'}" was rejected during review. Reason: ${reason || 'No reason provided.'}`;
+    try {
+      return await this.createNotification({
+        userId: submitterUserId,
+        title: 'Letter Review Rejected',
+        message: message,
+        type: 'letter_review_rejected',
+        entityType: 'letter',
+        entityId: letterId
+      });
+    } catch (error) {
+         console.error(`Error creating letter review rejected notification for submitter ${submitterUserId}, letter ${letterId}:`, error);
+    }
+  }
+
+  static async createLetterFinalApprovedNotification(
+    submitterUserId: string,
+    letterId: string,
+    letterName: string,
+    approverName?: string // Optional: Name of the final approver
+  ): Promise<Notification | void> {
+     const message = approverName
+        ? `Your letter "${letterName || 'Untitled Letter'}" has been finally approved by ${approverName}!`
+        : `Your letter "${letterName || 'Untitled Letter'}" has been finally approved!`;
+    try {
+      return await this.createNotification({
+        userId: submitterUserId,
+        title: 'Letter Approved',
+        message: message,
+        type: 'letter_final_approved',
+        entityType: 'letter',
+        entityId: letterId
+      });
+    } catch (error) {
+         console.error(`Error creating letter final approved notification for submitter ${submitterUserId}, letter ${letterId}:`, error);
+    }
+  }
+
+  static async createLetterFinalRejectedNotification(
+    submitterUserId: string,
+    letterId: string,
+    letterName: string,
+    reason: string,
+    approverName?: string // Optional: Name of the final approver
+  ): Promise<Notification | void> {
+      const message = approverName
+        ? `Your letter "${letterName || 'Untitled Letter'}" was finally rejected by ${approverName}. Reason: ${reason || 'No reason provided.'}`
+        : `Your letter "${letterName || 'Untitled Letter'}" was finally rejected. Reason: ${reason || 'No reason provided.'}`;
+    try {
+      return await this.createNotification({
+        userId: submitterUserId,
+        title: 'Letter Rejected',
+        message: message,
+        type: 'letter_final_rejected',
+        entityType: 'letter',
+        entityId: letterId
+      });
+    } catch (error) {
+         console.error(`Error creating letter final rejected notification for submitter ${submitterUserId}, letter ${letterId}:`, error);
+    }
+  }
+
+
+
+
+
+
+
 }

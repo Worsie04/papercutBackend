@@ -2,6 +2,8 @@ import { Model, DataTypes, Optional, Association } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
 import bcrypt from 'bcryptjs';
 import { Role } from './role.model';
+import { Cabinet } from './cabinet.model';
+import { CabinetMember } from './cabinet-member.model';
 
 interface UserAttributes {
   id: string;
@@ -19,9 +21,10 @@ interface UserAttributes {
   twoFactorEnabled: boolean;
   magicLinkToken?: string;
   magicLinkTokenExpiresAt?: Date;
+  position?: string;
 }
 
-interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'isActive' | 'createdAt' | 'updatedAt' | 'avatar' | 'twoFactorSecret' | 'twoFactorEnabled' | 'magicLinkToken' | 'magicLinkTokenExpiresAt'> {}
+interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'isActive' | 'createdAt' | 'updatedAt' | 'avatar' | 'twoFactorSecret' | 'twoFactorEnabled' | 'magicLinkToken' | 'magicLinkTokenExpiresAt' | 'position'> {}
 
 class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
   public id!: string;
@@ -39,6 +42,7 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public twoFactorEnabled!: boolean;
   public magicLinkToken?: string;
   public magicLinkTokenExpiresAt?: Date;
+  public position?: string;
 
   // Association methods
   public readonly roles?: Role[];
@@ -47,9 +51,17 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public removeRole!: (role: Role, options?: any) => Promise<void>;
   public getRoles!: () => Promise<Role[]>;
 
+  // Cabinet associations
+  public readonly createdCabinets?: Cabinet[];
+  public readonly memberCabinets?: Cabinet[];
+  public readonly approverCabinets?: Cabinet[];
+
   // Declare associations
   public static associations: {
     roles: Association<User, Role>;
+    createdCabinets: Association<User, Cabinet>;
+    memberCabinets: Association<User, Cabinet>;
+    approverCabinets: Association<User, Cabinet>;
   };
   lastLoginAt: Date | null = null;
 
@@ -126,6 +138,10 @@ User.init(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    position: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   },
   {
     sequelize,
@@ -149,4 +165,6 @@ User.init(
   }
 );
 
-export { User, UserAttributes, UserCreationAttributes }; 
+// Remove all associations from here as they are defined in associations.ts
+
+export { User, UserAttributes, UserCreationAttributes };

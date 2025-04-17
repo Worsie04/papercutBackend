@@ -10,7 +10,6 @@ const user_service_1 = require("../../services/user.service");
 const organization_service_1 = require("../../services/organization.service");
 const email_service_1 = require("../../services/email.service");
 const crypto_1 = __importDefault(require("crypto"));
-const organization_member_service_1 = require("../../services/organization-member.service");
 class AuthController {
     static async login(req, res) {
         console.log("login called");
@@ -304,7 +303,7 @@ class AuthController {
     }
     static async register(req, res) {
         try {
-            const { firstName, lastName, email, role, organizationId } = req.body;
+            const { firstName, lastName, email, role, position } = req.body;
             // Create user with a temporary password
             const temporaryPassword = crypto_1.default.randomBytes(20).toString('hex');
             const user = await user_service_1.UserService.createUser({
@@ -313,7 +312,8 @@ class AuthController {
                 lastName,
                 role,
                 password: temporaryPassword,
-                isActive: false, // User will be activated after setting password
+                isActive: false,
+                position,
             });
             // Generate magic link token
             const token = await auth_service_1.AuthService.generateMagicLinkToken(user.id);
@@ -324,13 +324,6 @@ class AuthController {
             // Send magic link email
             const magicLinkUrl = `${process.env.CLIENT_URL}/create-password?token=${token}`;
             await email_service_1.EmailService.sendMagicLink(email, magicLinkUrl);
-            // Add user to organization
-            await organization_member_service_1.OrganizationMemberService.addMember(organizationId, {
-                email,
-                firstName,
-                lastName,
-                role,
-            });
             res.status(201).json({
                 message: 'User registered successfully. Magic link has been sent to the email.',
                 userId: user.id,

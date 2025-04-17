@@ -75,9 +75,6 @@ app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 // Mount routes
 app.use(routes_1.default);
-process.stdout.write('Registered routes: ' + JSON.stringify(app._router.stack
-    .filter((r) => r.route)
-    .map((r) => `${r.route.path} - ${r.route.methods}`)) + '\n');
 app.set('trust proxy', 1); // Proxy arxasında işləmək üçün
 // Error logging
 app.use(logger_middleware_1.errorLogger);

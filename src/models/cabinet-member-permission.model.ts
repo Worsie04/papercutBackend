@@ -1,25 +1,16 @@
 import { Model, DataTypes } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
-import { User } from './user.model';
-import { Cabinet } from './cabinet.model';
 
 export class CabinetMemberPermission extends Model {
   public id!: string;
   public userId!: string;
   public cabinetId!: string;
+  public cabinetMemberId!: string;
   public role!: string;
-  public permissions!: {
-    readRecords: boolean;
-    createRecords: boolean;
-    updateRecords: boolean;
-    deleteRecords: boolean;
-    manageCabinet: boolean;
-    downloadFiles: boolean;
-    exportTables: boolean;
-  };
+  public permissions!: object;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
-  public deletedAt?: Date;
+  public readonly deletedAt!: Date | null;
 }
 
 CabinetMemberPermission.init(
@@ -34,7 +25,7 @@ CabinetMemberPermission.init(
       allowNull: false,
       field: 'user_id',
       references: {
-        model: User,
+        model: 'users',
         key: 'id',
       },
     },
@@ -43,7 +34,16 @@ CabinetMemberPermission.init(
       allowNull: false,
       field: 'cabinet_id',
       references: {
-        model: Cabinet,
+        model: 'cabinets',
+        key: 'id',
+      },
+    },
+    cabinetMemberId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: 'cabinet_member_id',
+      references: {
+        model: 'cabinet_members',
         key: 'id',
       },
     },
@@ -67,14 +67,17 @@ CabinetMemberPermission.init(
     },
     createdAt: {
       type: DataTypes.DATE,
+      allowNull: false,
       field: 'created_at',
     },
     updatedAt: {
       type: DataTypes.DATE,
+      allowNull: false,
       field: 'updated_at',
     },
     deletedAt: {
       type: DataTypes.DATE,
+      allowNull: true,
       field: 'deleted_at',
     },
   },
@@ -82,17 +85,7 @@ CabinetMemberPermission.init(
     sequelize,
     tableName: 'cabinet_member_permissions',
     paranoid: true,
-    timestamps: true,
   }
 );
 
-// Define associations
-CabinetMemberPermission.belongsTo(User, {
-  foreignKey: 'userId',
-  as: 'user',
-});
-
-CabinetMemberPermission.belongsTo(Cabinet, {
-  foreignKey: 'cabinetId',
-  as: 'cabinet',
-}); 
+export default CabinetMemberPermission; 

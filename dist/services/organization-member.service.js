@@ -144,7 +144,7 @@ class OrganizationMemberService {
         return this.getMember(member.id);
     }
     static async updateMember(organizationId, userId, updates) {
-        console.log(userId);
+        //console.log(userId)
         const member = await organization_member_model_1.OrganizationMember.findOne({
             where: {
                 organizationId,

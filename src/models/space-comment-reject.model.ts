@@ -78,44 +78,4 @@ SpaceCommentReject.init(
     paranoid: true,
     underscored: true,
   }
-);
-
-// Define associations
-SpaceCommentReject.belongsTo(Space, {
-  foreignKey: 'spaceId',
-  as: 'space',
-});
-
-SpaceCommentReject.belongsTo(User, {
-  foreignKey: 'userId',
-  as: 'user',
-});
-
-// Add reverse associations to Space model
-Space.hasMany(SpaceCommentReject, {
-  foreignKey: 'spaceId',
-  as: 'comments',
-});
-
-// Add specific comment type associations
-Space.hasMany(SpaceCommentReject, {
-  foreignKey: 'spaceId',
-  as: 'rejectionComments',
-  scope: {
-    type: 'rejection',
-  },
-});
-
-Space.hasMany(SpaceCommentReject, {
-  foreignKey: 'spaceId',
-  as: 'approvalComments',
-  scope: {
-    type: 'approval',
-  },
-});
-
-// Add user association
-User.hasMany(SpaceCommentReject, {
-  foreignKey: 'userId',
-  as: 'spaceComments',
-}); 
+); 

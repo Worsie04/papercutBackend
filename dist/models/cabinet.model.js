@@ -2,82 +2,124 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Cabinet = void 0;
 const sequelize_1 = require("sequelize");
-const base_model_1 = require("./base.model");
 const sequelize_2 = require("../infrastructure/database/sequelize");
-class Cabinet extends base_model_1.BaseModel {
+class Cabinet extends sequelize_1.Model {
 }
 exports.Cabinet = Cabinet;
-Cabinet.init(Object.assign(Object.assign({}, base_model_1.baseModelConfig), { name: {
+Cabinet.init({
+    id: {
+        type: sequelize_1.DataTypes.UUID,
+        defaultValue: sequelize_1.DataTypes.UUIDV4,
+        primaryKey: true,
+    },
+    name: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: false,
-    }, company: {
+    },
+    company: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: false,
-    }, description: {
+    },
+    description: {
         type: sequelize_1.DataTypes.TEXT,
         allowNull: true,
-    }, spaceId: {
+    },
+    spaceId: {
         type: sequelize_1.DataTypes.UUID,
         allowNull: false,
+        field: 'space_id',
         references: {
             model: 'spaces',
             key: 'id',
         },
-    }, parentId: {
+    },
+    parentId: {
         type: sequelize_1.DataTypes.UUID,
         allowNull: true,
+        field: 'parent_id',
         references: {
             model: 'cabinets',
             key: 'id',
         },
-    }, tags: {
+    },
+    tags: {
         type: sequelize_1.DataTypes.ARRAY(sequelize_1.DataTypes.STRING),
         allowNull: false,
         defaultValue: [],
-    }, metadata: {
+    },
+    metadata: {
         type: sequelize_1.DataTypes.JSONB,
         allowNull: true,
-    }, settings: {
+    },
+    settings: {
         type: sequelize_1.DataTypes.JSONB,
         allowNull: false,
         defaultValue: {},
-    }, customFields: {
+    },
+    customFields: {
         type: sequelize_1.DataTypes.JSONB,
         allowNull: false,
         defaultValue: [],
-    }, members: {
-        type: sequelize_1.DataTypes.ARRAY(sequelize_1.DataTypes.UUID),
+        field: 'custom_fields',
+    },
+    memberIds: {
+        type: sequelize_1.DataTypes.ARRAY(sequelize_1.DataTypes.STRING),
         allowNull: false,
         defaultValue: [],
-    }, approvers: {
+        field: 'members',
+    },
+    approvers: {
         type: sequelize_1.DataTypes.JSONB,
         allowNull: false,
         defaultValue: [],
-    }, approverNote: {
+    },
+    approverNote: {
         type: sequelize_1.DataTypes.TEXT,
         allowNull: true,
-    }, isActive: {
+        field: 'approver_note',
+    },
+    isActive: {
         type: sequelize_1.DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true,
-    }, createdById: {
+        field: 'is_active',
+    },
+    createdById: {
         type: sequelize_1.DataTypes.UUID,
         allowNull: false,
+        field: 'created_by_id',
         references: {
             model: 'users',
             key: 'id',
         },
-        field: 'created_by_id',
-    }, status: {
+    },
+    status: {
         type: sequelize_1.DataTypes.ENUM('pending', 'approved', 'rejected'),
         allowNull: false,
         defaultValue: 'pending',
-    }, rejectionReason: {
+    },
+    rejectionReason: {
         type: sequelize_1.DataTypes.TEXT,
         allowNull: true,
-    } }), {
+        field: 'rejection_reason',
+    },
+    createdAt: {
+        type: sequelize_1.DataTypes.DATE,
+        allowNull: false,
+        field: 'created_at',
+    },
+    updatedAt: {
+        type: sequelize_1.DataTypes.DATE,
+        allowNull: false,
+        field: 'updated_at',
+    },
+    deletedAt: {
+        type: sequelize_1.DataTypes.DATE,
+        allowNull: true,
+        field: 'deleted_at',
+    },
+}, {
     sequelize: sequelize_2.sequelize,
-    modelName: 'Cabinet',
     tableName: 'cabinets',
     paranoid: true,
 });

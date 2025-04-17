@@ -90,22 +90,4 @@ Group.init(
     paranoid: true,
     timestamps: true,
   }
-);
-
-// Define associations
-Group.belongsTo(Organization, {
-  foreignKey: 'organizationId',
-  as: 'organization',
-});
-
-Group.belongsTo(User, {
-  foreignKey: 'createdBy',
-  as: 'creator',
-});
-
-Group.belongsToMany(User, {
-  through: 'group_members',
-  foreignKey: 'groupId',
-  otherKey: 'userId',
-  as: 'members',
-}); 
+); 

@@ -25,7 +25,7 @@ const uploadMulter = multer({
 });
 
 // Group routes by feature
-router.use(authenticate('user')); // Apply authentication globally
+router.use(authenticate(['user', 'admin', 'super_admin']));
 
 // Create route groups
 const recordRoutes = Router();
@@ -38,17 +38,19 @@ recordRoutes
   .post(uploadMulter.any(), RecordController.createRecord)
   .get(RecordController.getRecordsByStatus);
 
+// Add new version upload route
 recordRoutes
-  .route('/:id')
-  .get(RecordController.getRecord)
-  .put(uploadMulter.any(), RecordController.updateRecord)
-  .delete(RecordController.deleteRecord);
+  .route('/:id/versions')
+  .post(uploadMulter.single('file'), RecordController.uploadNewVersion)
+  
+  recordRoutes.get('/other/:id/other-records', RecordController.getOtherRecords);
 
 // Status-related routes
 recordRoutes.get('/my-records', RecordController.getMyRecordsByStatus);
 recordRoutes.get('/waiting-for-my-approval', RecordController.getRecordsWaitingForMyApproval);
 recordRoutes.put('/:id/approve', uploadMulter.any(), RecordController.approveRecord);
 recordRoutes.put('/:id/reject', uploadMulter.any(), RecordController.rejectRecord);
+recordRoutes.post('/:id/reassign', RecordController.reassignRecord);
 
 // File operations
 fileRoutes.post('/with-files', RecordController.createRecordWithFiles);
@@ -58,10 +60,15 @@ fileRoutes.get('/file/:filePath', RecordController.getFileUrl);
 
 versionRoutes
   .route('/:id/versions')
-  .post(authenticate, upload.single('file'), RecordController.uploadNewVersion) // Fixed missing auth
-  .get(authenticate, RecordController.getVersions); // Fixed missing auth
+  .post(authenticate, upload.single('file'), RecordController.uploadNewVersion)
+  .get(RecordController.getVersions);
 
-versionRoutes.delete('/:id/versions/:versionId', authenticate, RecordController.deleteVersion); // Fixed missing auth
+versionRoutes.delete('/:id/versions/:versionId', authenticate, RecordController.deleteVersion);
+
+recordRoutes.get('/:id', RecordController.getRecord)
+recordRoutes.put('/:id/update', uploadMulter.any(), RecordController.updateRecord)
+recordRoutes.put('/:id/modify', uploadMulter.any(), RecordController.modifyRecord)
+recordRoutes.delete('/:id', RecordController.deleteRecord)
 
 // Mount sub-routers
 router.use('/', recordRoutes);

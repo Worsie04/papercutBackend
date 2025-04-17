@@ -113,13 +113,12 @@ export class OrganizationController {
       }
 
       const organizations = await OrganizationService.getOrganizationsByOwner(userId, userType === 'admin' ? 'admin' : 'user');
-      console.log(organizations);
-      // Transform the response to use a consistent owner structure
+      
       const transformedOrganizations = organizations.map(org => ({
         ...org.toJSON(),
         owner: org.getOwner()
       }));
-      console.log(transformedOrganizations);
+     // console.log(transformedOrganizations);
       res.json(transformedOrganizations);
     } catch (error) {
       next(error);

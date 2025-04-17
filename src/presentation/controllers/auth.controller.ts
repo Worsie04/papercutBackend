@@ -335,7 +335,7 @@ export class AuthController {
 
   static async register(req: Request, res: Response) {
     try {
-      const { firstName, lastName, email, role, organizationId } = req.body;
+      const { firstName, lastName, email, role, position } = req.body;
 
       // Create user with a temporary password
       const temporaryPassword = crypto.randomBytes(20).toString('hex');
@@ -345,7 +345,8 @@ export class AuthController {
         lastName,
         role,
         password: temporaryPassword,
-        isActive: false, // User will be activated after setting password
+        isActive: false,
+        position,
       });
 
       // Generate magic link token
@@ -360,14 +361,6 @@ export class AuthController {
       // Send magic link email
       const magicLinkUrl = `${process.env.CLIENT_URL}/create-password?token=${token}`;
       await EmailService.sendMagicLink(email, magicLinkUrl);
-
-      // Add user to organization
-      await OrganizationMemberService.addMember(organizationId, {
-        email,
-        firstName,
-        lastName,
-        role,
-      });
 
       res.status(201).json({
         message: 'User registered successfully. Magic link has been sent to the email.',

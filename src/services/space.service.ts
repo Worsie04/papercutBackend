@@ -15,6 +15,7 @@ import { Record as RecordModel } from '../models/record.model';
 import { NotificationService } from './notification.service';
 import { ActivityService } from './activity.service';
 import { ActivityType, ResourceType } from '../models/activity.model';
+import { Op } from 'sequelize';
 
 interface CreateSpaceParams {
   name: string;
@@ -116,7 +117,7 @@ export class SpaceService {
           settings: {
             userGroup: data.userGroup,
           },
-          status: data.requireApproval ? 'pending' : 'approved',
+          status: 'approved',
         },
         { transaction }
       );
@@ -192,38 +193,30 @@ export class SpaceService {
       include: [
         {
           model: User,
-          as: 'spaceMembers',
+          as: 'members',
           through: { 
-            attributes: ['role', 'permissions'] 
+            attributes: ['role'] 
           },
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
         },
         {
           model: User,
           as: 'owner',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
         },
         {
           model: User,
-          as: 'createdBy',
-        },
-        {
-          model: User,
-          as: 'rejector',
-        },
-      ],
+          as: 'creator',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
+        }
+      ]
     });
 
     if (!space) {
       throw new AppError(404, 'Space not found');
     }
 
-    const transformedSpace = space.toJSON();
-    transformedSpace.members = transformedSpace.spaceMembers.map((member: any) => ({
-      ...member,
-      role: member.SpaceMember?.role || 'member'
-    }));
-    delete transformedSpace.spaceMembers;
-
-    return transformedSpace;
+    return space;
   }
 
   static async addMember(
@@ -272,71 +265,52 @@ export class SpaceService {
       include: [
         {
           model: User,
-          as: 'spaceMembers',
-          through: { attributes: ['role', 'permissions'] },
-        },
-        {
-          model: User,
           as: 'owner',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
         },
         {
           model: User,
-          as: 'createdBy',
+          as: 'members',
+          through: { attributes: ['role'] },
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
         }
       ],
-      order: [['createdAt', 'DESC']],
+      order: [['createdAt', 'DESC']]
     });
 
-    // Transform each space to maintain backward compatibility
-    return spaces.map(space => {
-      const transformedSpace = space.toJSON();
-      transformedSpace.members = transformedSpace.spaceMembers.map((member: any) => ({
-        ...member,
-        role: member.SpaceMember?.role || 'member'
-      }));
-      delete transformedSpace.spaceMembers;
-      return transformedSpace;
-    });
+    return spaces;
   }
 
   static async getSpacesByStatus(status: string): Promise<Space[]> {
     const spaces = await Space.findAll({
-      where: {
-        status
-      },
+      where: { status },
       include: [
         {
           model: User,
-          as: 'spaceMembers',
-          through: { attributes: ['role', 'permissions'] },
+          as: 'members',
+          through: { attributes: ['role'] },
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
         },
         {
           model: User,
           as: 'owner',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
         },
         {
           model: User,
-          as: 'createdBy',
+          as: 'creator',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
         }
       ],
-      order: [['createdAt', 'DESC']],
+      order: [['createdAt', 'DESC']]
     });
 
-    // Transform each space to maintain backward compatibility
-    return spaces.map(space => {
-      const transformedSpace = space.toJSON();
-      transformedSpace.members = transformedSpace.spaceMembers.map((member: any) => ({
-        ...member,
-        role: member.SpaceMember?.role || 'member'
-      }));
-      delete transformedSpace.spaceMembers;
-      return transformedSpace;
-    });
+    return spaces;
   }
 
   static async getPendingApprovals(userId: string) {
     try {
-      console.log('Fetching pending space approvals for user:', userId);
+     // console.log('Fetching pending space approvals for user:', userId);
       const pendingSpaces = await Space.findAll({
         where: {
           status: 'pending'
@@ -349,16 +323,16 @@ export class SpaceService {
         order: [['createdAt', 'DESC']]
       });
 
-      console.log('Found pending spaces:', pendingSpaces.length);
+     // console.log('Found pending spaces:', pendingSpaces.length);
 
-      return pendingSpaces.map((space: any) => ({
+      return pendingSpaces.map(space => ({
         id: space.id,
         name: space.name,
         type: 'space',
         createdBy: {
-          id: space.owner.id,
-          name: `${space.owner.firstName} ${space.owner.lastName}`,
-          avatar: space.owner.avatar || '/images/avatar.png'
+          id: space.owner?.id || null,
+          name: space.owner ? `${space.owner.firstName} ${space.owner.lastName}` : 'Unknown User',
+          avatar: space.owner?.avatar || '/images/avatar.png'
         },
         createdAt: space.createdAt,
         priority: 'Med'
@@ -380,7 +354,7 @@ export class SpaceService {
       });
       
       if (!space) {
-        throw new Error('Space not found');
+        throw new AppError(404, 'Space not found');
       }
 
       await space.update({ status: 'approved' });
@@ -400,10 +374,9 @@ export class SpaceService {
             space.id,
             space.name
           );
-          console.log(`Approval notification sent to space owner: ${space.owner.id}`);
+        //  console.log(`Approval notification sent to space owner: ${space.owner.id}`);
         } catch (error) {
           console.error('Error sending space approval notification:', error);
-          // We don't want to fail the space approval if the notification fails
         }
       }
       
@@ -450,7 +423,7 @@ export class SpaceService {
             space.name,
             reason
           );
-          console.log(`Rejection notification sent to space owner: ${space.owner.id}`);
+        //  console.log(`Rejection notification sent to space owner: ${space.owner.id}`);
         } catch (error) {
           console.error('Error sending space rejection notification:', error);
           // We don't want to fail the space rejection if the notification fails
@@ -464,33 +437,42 @@ export class SpaceService {
     }
   }
 
-  static async resubmitSpace(spaceId: string, message: string, userId: string) {
+  static async resubmitSpace(spaceId: string, message: string, userId: string): Promise<Space> {
+    const transaction = await sequelize.transaction();
+    
     try {
       const space = await Space.findByPk(spaceId, {
         include: [{
           model: User,
           as: 'owner',
           attributes: ['id', 'firstName', 'lastName']
-        }]
+        }],
+        transaction
       });
       
       if (!space) {
-        throw new Error('Space not found');
+        throw new AppError(404, 'Space not found');
       }
 
-      // Change status back to pending
+      // Verify the user is the owner
+      if (space.ownerId !== userId) {
+        throw new AppError(403, 'Only the space owner can resubmit');
+      }
+
+      // Update space status
       await space.update({ 
         status: 'pending',
         rejectionReason: null,
         rejectedBy: null
-      });
+      }, { transaction });
       
       // Add a comment about the resubmission
       await SpaceCommentService.createComment({
         spaceId,
         userId,
         message: message || 'Space resubmitted for approval.',
-        type: 'update'
+        type: 'update',
+        transaction
       });
       
       // Log space resubmission activity
@@ -501,7 +483,8 @@ export class SpaceService {
           resourceType: ResourceType.SPACE,
           resourceId: spaceId,
           resourceName: space.name,
-          details: message || 'Space resubmitted for approval.'
+          details: message || 'Space resubmitted for approval.',
+          transaction
         });
       } catch (error) {
         console.error('Failed to log space resubmission activity:', error);
@@ -511,7 +494,7 @@ export class SpaceService {
       if (space.approvers && Array.isArray(space.approvers) && space.approvers.length > 0) {
         try {
           // Get submitter information for the notification
-          const submitter = await User.findByPk(userId);
+          const submitter = await User.findByPk(userId, { transaction });
           const submitterName = submitter ? `${submitter.firstName} ${submitter.lastName}` : 'A user';
           
           // Send notification to each approver
@@ -523,15 +506,15 @@ export class SpaceService {
               submitterName
             );
           }
-          console.log(`Resubmission notifications sent to ${space.approvers.length} approvers`);
         } catch (error) {
           console.error('Error sending space resubmission notifications:', error);
-          // We don't want to fail the space resubmission if notifications fail
         }
       }
-      
+
+      await transaction.commit();
       return space;
     } catch (error) {
+      await transaction.rollback();
       console.error('Error resubmitting space:', error);
       throw error;
     }
@@ -646,7 +629,7 @@ export class SpaceService {
 
   static async getMyPendingApprovals(userId: string) {
     try {
-      console.log('Fetching spaces created by user that are pending approval:', userId);
+     // console.log('Fetching spaces created by user that are pending approval:', userId);
       
       const pendingSpaces = await Space.findAll({
         where: {
@@ -662,19 +645,19 @@ export class SpaceService {
         order: [['createdAt', 'DESC']]
       });
       
-      console.log('Found pending spaces created by this user:', pendingSpaces.length);
+     // console.log('Found pending spaces created by this user:', pendingSpaces.length);
       
-      return pendingSpaces.map((space: any) => ({
+      return pendingSpaces.map(space => ({
         id: space.id,
         name: space.name,
         status: space.status,
         createdAt: space.createdAt,
         updatedAt: space.updatedAt,
-        owner: {
-          firstName: space.owner?.firstName || 'Unknown',
-          lastName: space.owner?.lastName || 'User',
-          avatar: space.owner?.avatar || null
-        }
+        owner: space.owner ? {
+          firstName: space.owner.firstName,
+          lastName: space.owner.lastName,
+          avatar: space.owner.avatar
+        } : null
       }));
     } catch (error) {
       console.error('Error fetching my pending space approvals:', error);
@@ -684,12 +667,15 @@ export class SpaceService {
 
   static async getApprovalsWaitingFor(userId: string) {
     try {
-      console.log('Fetching spaces waiting for approval by user:', userId);
+     // console.log('Fetching spaces waiting for approval by user:', userId);
       
       const pendingSpaces = await Space.findAll({
         where: {
           status: 'pending',
           requireApproval: true,
+          approvers: {
+            [Op.contains]: [{ userId }]
+          }
         },
         include: [{
           model: User,
@@ -699,33 +685,18 @@ export class SpaceService {
         order: [['createdAt', 'DESC']]
       });
       
-      // Filter spaces where the current user is in the approvers list
-      const spacesWaitingForApproval = pendingSpaces.filter(space => {
-        if (!space.approvers) return false;
-        
-        // Check if the user is in the approvers array
-        return space.approvers.some((approver: {userId: string, order: number}) => 
-          approver.userId === userId
-        );
-      });
-      
-      console.log('Found spaces waiting for approval by this user:', spacesWaitingForApproval.length);
-      
-      return spacesWaitingForApproval.map((space: any) => {
-        
-        return {
-          id: space.id,
-          name: space.name,
-          status: space.status,
-          createdAt: space.createdAt,
-          updatedAt: space.updatedAt,
-          owner: space.owner ? {
-            firstName: space.owner.firstName,
-            lastName: space.owner.lastName,
-            avatar: space.owner.avatar
-          } : undefined
-        };
-      });
+      return pendingSpaces.map(space => ({
+        id: space.id,
+        name: space.name,
+        status: space.status,
+        createdAt: space.createdAt,
+        updatedAt: space.updatedAt,
+        owner: space.owner ? {
+          firstName: space.owner.firstName,
+          lastName: space.owner.lastName,
+          avatar: space.owner.avatar
+        } : null
+      }));
     } catch (error) {
       console.error('Error fetching spaces waiting for approval:', error);
       throw error;
@@ -739,7 +710,7 @@ export class SpaceService {
     message?: string
   ): Promise<void> {
     try {
-      console.log(`Reassigning approval for space ${spaceId} from user ${currentUserId} to user ${assigneeId}`);
+     // console.log(`Reassigning approval for space ${spaceId} from user ${currentUserId} to user ${assigneeId}`);
       
       // 1. Verify the space exists
       const space = await Space.findByPk(spaceId);
@@ -845,11 +816,11 @@ export class SpaceService {
         await transaction.commit();
         
         // 8. Log the reassignment
-        console.log(`Successfully reassigned approval for space ${spaceId} to user ${assigneeId}`);
-        console.log(`Updated approvers:`, JSON.stringify(updatedApprovers, null, 2));
+       // console.log(`Successfully reassigned approval for space ${spaceId} to user ${assigneeId}`);
+       // console.log(`Updated approvers:`, JSON.stringify(updatedApprovers, null, 2));
         
         // 9. Log space activity (simplified)
-        console.log(`Activity logged for space ${spaceId}: reassign - Reassigned approval to another user`);
+       // console.log(`Activity logged for space ${spaceId}: reassign - Reassigned approval to another user`);
       } catch (error) {
         // Rollback the transaction if any operation fails
         await transaction.rollback();
@@ -910,11 +881,11 @@ export class SpaceService {
         order: [['createdAt', 'DESC']]
       });
       
-      console.log(`Found ${spaces.length} spaces with status ${status} created by this user`);
+     // console.log(`Found ${spaces.length} spaces with status ${status} created by this user`);
       
       
       if (spaces.length > 0) {
-        console.log('First space example:', JSON.stringify(spaces[0], null, 2));
+       // console.log('First space example:', JSON.stringify(spaces[0], null, 2));
       }
       
       return spaces.map((space: any) => {
@@ -946,7 +917,7 @@ export class SpaceService {
 
   static async deleteSpace(spaceId: string, userId: string): Promise<boolean> {
     try {
-      console.log(`Attempting to delete space ${spaceId} by user ${userId}`);
+     // console.log(`Attempting to delete space ${spaceId} by user ${userId}`);
       
       // 1. Verify the space exists
       const space = await Space.findByPk(spaceId, {
@@ -1100,14 +1071,14 @@ export class SpaceService {
               spaceName,
               userId
             );
-            console.log(`Space deletion notification sent to space owner: ${spaceOwnerId}`);
+           // console.log(`Space deletion notification sent to space owner: ${spaceOwnerId}`);
           } catch (error) {
             console.error('Error sending space deletion notification:', error);
             
           }
         }
         
-        console.log(`Successfully deleted space ${spaceId}`);
+       // console.log(`Successfully deleted space ${spaceId}`);
         return true;
       } catch (error) {
         // Rollback the transaction if any operation fails

@@ -7,11 +7,13 @@ const role_model_1 = require("../models/role.model");
 const errorHandler_1 = require("../presentation/middlewares/errorHandler");
 const jwt_util_1 = require("../utils/jwt.util");
 const sequelize_2 = require("../infrastructure/database/sequelize");
-const organization_model_1 = require("../models/organization.model");
 const organization_member_service_1 = require("./organization-member.service");
 const cabinet_member_model_1 = require("../models/cabinet-member.model");
 const cabinet_model_1 = require("../models/cabinet.model");
 const cabinet_member_permission_model_1 = require("../models/cabinet-member-permission.model");
+const organization_service_1 = require("./organization.service");
+const group_service_1 = require("./group.service");
+const organization_member_model_1 = require("../models/organization-member.model");
 class UserService {
     static async getUsers({ page, limit, search, sortBy = 'created_at', sortOrder = 'desc', }) {
         const offset = (page - 1) * limit;
@@ -29,21 +31,59 @@ class UserService {
             limit,
             offset,
             order: [[sortBy, sortOrder]],
-            // include: [{
-            //   model: Role,
-            //   as: 'Roles',
-            //   through: { attributes: [] }
-            // }],
-            // raw: false // Ensure we get Sequelize model instances
+            attributes: ['id', 'email', 'firstName', 'lastName', 'createdAt', 'updatedAt', 'avatar', 'isActive', 'position'],
+            include: [{
+                    model: role_model_1.Role,
+                    as: 'Roles',
+                    through: { attributes: [] }
+                }],
+            raw: false
         });
         // Transform the users to plain objects
         // const users = rows.map(user => user.get({ plain: true }));
         return {
-            users: rows, // This will now be a plain array of user objects
+            users: rows,
             total: count,
             page,
             totalPages: Math.ceil(count / limit),
         };
+    }
+    static async getSuperUsers(userId) {
+        // Find the organizations the current user belongs to
+        const userOrganizations = await organization_member_model_1.OrganizationMember.findAll({
+            where: {
+                userId: userId,
+                status: 'active'
+            },
+            attributes: ['organizationId']
+        });
+        if (!userOrganizations || userOrganizations.length === 0) {
+            return [];
+        }
+        // Extract organization IDs
+        const organizationIds = userOrganizations.map((org) => org.organizationId);
+        // Find all organization members with 'super_user' role in these organizations
+        const superUserMembers = await organization_member_model_1.OrganizationMember.findAll({
+            where: {
+                organizationId: organizationIds,
+                role: 'super_user',
+                status: 'active'
+            },
+            include: [{
+                    model: user_model_1.User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
+                }]
+        });
+        // Extract and return the user objects
+        // Use type assertion and get() to safely extract the user objects
+        const superUsers = superUserMembers
+            .map((member) => {
+            const memberData = member.get({ plain: true });
+            return memberData.user;
+        })
+            .filter((user) => user !== null && user !== undefined);
+        return superUsers;
     }
     static async getUser(id) {
         const user = await user_model_1.User.findByPk(id, {
@@ -82,7 +122,6 @@ class UserService {
         return this.getUser(user.id);
     }
     static async updateUser(id, data) {
-        var _a;
         const user = await user_model_1.User.findByPk(id, {
             include: [{
                     model: role_model_1.Role,
@@ -117,34 +156,7 @@ class UserService {
         else {
             await user.update(data);
         }
-        // If password is being set (during magic link flow), try to add user to organization
-        if (data.password) {
-            try {
-                // Extract domain from email
-                const emailDomain = user.email.split('@')[1];
-                // Find organization by domain
-                const organization = await organization_model_1.Organization.findOne({
-                    where: { domain: emailDomain }
-                });
-                if (organization) {
-                    // Get user's role (assuming first role is the default one)
-                    const userRoles = await user.getRoles();
-                    const defaultRole = ((_a = userRoles[0]) === null || _a === void 0 ? void 0 : _a.name) || 'member_full'; // Default to member_full if no role found
-                    // Add user to organization
-                    await organization_member_service_1.OrganizationMemberService.addMember(organization.id, {
-                        email: user.email,
-                        firstName: user.firstName,
-                        lastName: user.lastName,
-                        role: defaultRole,
-                    });
-                }
-            }
-            catch (error) {
-                // Log error but don't fail the password update
-                console.error('Error adding user to organization:', error);
-            }
-        }
-        // Fetch updated user with role information
+        console.log('User updated:', data.position);
         return this.getUser(id);
     }
     static async deleteUser(id) {
@@ -209,8 +221,61 @@ class UserService {
         // Extract cabinets from cabinet members with role and permissions
         return cabinetMembers.map(member => {
             var _a, _b, _c;
-            return (Object.assign(Object.assign({}, (_a = member.cabinet) === null || _a === void 0 ? void 0 : _a.toJSON()), { role: (_b = member.memberPermissions) === null || _b === void 0 ? void 0 : _b.role, permissions: (_c = member.memberPermissions) === null || _c === void 0 ? void 0 : _c.permissions }));
+            // Get the cabinet data using the association
+            const cabinetData = (_a = member.cabinet) === null || _a === void 0 ? void 0 : _a.toJSON();
+            return Object.assign(Object.assign({}, cabinetData), { role: (_b = member.memberPermissions) === null || _b === void 0 ? void 0 : _b.role, permissions: (_c = member.memberPermissions) === null || _c === void 0 ? void 0 : _c.permissions });
         });
+    }
+    static async getUserWithRelatedData(userId, includeParams = []) {
+        // Get basic user data
+        const user = await this.getUser(userId);
+        // Initialize result object
+        const result = {
+            user: {
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                avatar: user.avatar,
+                position: user.position,
+            }
+        };
+        // Check if user is a super_user
+        let isSuperUser = false;
+        // First check organization_members table
+        const organizations = await organization_service_1.OrganizationService.findDomainByUserId(userId);
+        result.organization = organizations;
+        if (organizations && organizations.length > 0) {
+            const members = await organization_member_service_1.OrganizationMemberService.getOrganizationMembers(organizations);
+            const userMember = members.find(member => member.userId === userId);
+            if (userMember && userMember.role === 'super_user') {
+                isSuperUser = true;
+            }
+        }
+        if (!isSuperUser) {
+            const userRoles = await user.getRoles();
+            const hasSuperUserRole = userRoles.some(role => ['super_user', 'admin', 'system_admin'].includes(role.name));
+            if (hasSuperUserRole) {
+                isSuperUser = true;
+            }
+        }
+        result.isSuperUser = isSuperUser;
+        if (includeParams.includes('organizations')) {
+            result.organization = organizations;
+        }
+        if (includeParams.includes('groups')) {
+            const groups = await group_service_1.GroupService.getGroupsByUserId(userId);
+            result.groups = groups;
+        }
+        if (includeParams.includes('cabinets')) {
+            const cabinets = await this.getUserCabinets(userId);
+            result.cabinets = cabinets;
+        }
+        if (includeParams.includes('roles')) {
+            const roles = await user.getRoles();
+            result.roles = roles;
+        }
+        return result;
     }
 }
 exports.UserService = UserService;

@@ -31,7 +31,21 @@ module.exports = {
           'space_rejection', 
           'space_reassignment', 
           'space_creation',
-          'space_deletion'
+          'space_deletion',
+          'cabinet_rejection', 
+          'cabinet_reassignment', 
+          'cabinet_creation',
+          'cabinet_deletion',
+          'cabinet_update',
+          'cabinet_approval',
+          'record_approval', 
+          'record_rejection', 
+          'record_creation',
+          'record_deletion',
+          'record_update',
+          'template_share',
+          'template_update',
+          'template_delete'
         ),
         allowNull: false
       },

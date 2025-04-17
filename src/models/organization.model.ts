@@ -19,15 +19,15 @@ export class Organization extends Model {
   public updatedAt!: Date;
 
   // Associations
-  public userOwner?: User;
+  public organizationOwner?: User;
   public adminOwner?: Admin;
   public members?: OrganizationMember[];
   
 
   // Helper method to get the appropriate owner
   public getOwner(): User | Admin | undefined {
-    if (this.owner_type === 'user' && this.userOwner) {
-      return this.userOwner;
+    if (this.owner_type === 'user' && this.organizationOwner) {
+      return this.organizationOwner;
     } else if (this.owner_type === 'admin' && this.adminOwner) {
       return this.adminOwner;
     }
@@ -141,7 +141,7 @@ Organization.init(
       withUserOwner: {
         include: [{
           model: User,
-          as: 'userOwner',
+          as: 'organizationOwner',
           required: false,
           where: {
             '$Organization.owner_type$': 'user'

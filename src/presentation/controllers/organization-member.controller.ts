@@ -49,13 +49,13 @@ export class OrganizationMemberController {
       // Check if the organization exists
       await OrganizationService.getOrganization(organizationId);
 
-      console.log(userId);
-      console.log(organizationId);
-      console.log(role);
-      console.log(customPermissions);
-      console.log(status);
-      console.log(firstName);
-      console.log(lastName);
+     // console.log(userId);
+     // console.log(organizationId);
+     // console.log(role);
+     // console.log(customPermissions);
+     // console.log(status);
+     // console.log(firstName);
+     // console.log(lastName);
 
       // First, find the member to get the associated user
       const member = await OrganizationMember.findOne({

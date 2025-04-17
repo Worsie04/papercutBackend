@@ -1,10 +1,13 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { RecordService } from '../../services/record.service';
 import { RecordStatus } from '../../models/record.model';
 import { AppError } from '../middlewares/errorHandler';
 import { UploadService } from '../../services/upload.service';
 import { Cabinet } from '../../models/cabinet.model';
 import fileService from '../../services/file.service';
+import { NotificationService } from '../../services/notification.service';
+import { Space } from '../../models/space.model';
+import { AuthenticatedRequest } from '@/types/express';
 
 export class RecordController {
   
@@ -71,6 +74,49 @@ export class RecordController {
         tags,
         pdfFile
       });
+
+      // Əvvəlcə, record‑un aid olduğu kabineti tapırıq
+      const cabinet = await Cabinet.findByPk(record.cabinetId);
+      if (cabinet) {
+        await NotificationService.createNotification({
+          userId: cabinet.createdById,
+          title: 'Yeni Record Yaradıldı',
+          message: `Sizin təsdiqiniz üçün yeni record "${record.title}" yaradıldı.`,
+          type: 'record_creation',
+          entityType: 'record',
+          entityId: record.id
+        });
+
+
+        // 1. Kabinetin approverlərinə bildiriş göndərin (əgər varsa)
+        // if (cabinet.approvers && cabinet.approvers.length > 0) {
+        //   await Promise.all(
+        //     cabinet.approvers.map((approver: { userId: string; order: number }) =>
+        //       NotificationService.createNotification({
+        //         userId: approver.userId,
+        //         title: 'Yeni Record Yaradıldı',
+        //         message: `Sizin təsdiqiniz üçün yeni record "${record.title}" yaradıldı.`,
+        //         type: 'record_creation',
+        //         entityType: 'record',
+        //         entityId: record.id
+        //       })
+        //     )
+        //   );
+        // }
+
+        // 2. Həmçinin, həmin kabinetin aid olduğu Space‑i yaradan istifadəçiyə bildiriş göndərin
+        // const space = await Space.findByPk(cabinet.spaceId);
+        // if (space) {
+        //   await NotificationService.createNotification({
+        //     userId: space.createdById,
+        //     title: 'Yeni Record Yaradıldı',
+        //     message: `Sizin yaratdığınız Space üçün yeni record "${record.title}" əlavə edildi.`,
+        //     type: 'record_creation',
+        //     entityType: 'record',
+        //     entityId: record.id
+        //   });
+        // }
+      }
 
       res.status(201).json(record);
     } catch (error) {
@@ -214,114 +260,18 @@ export class RecordController {
     }
   }
 
-  static async updateRecord(req: Request, res: Response) {
+  static async getOtherRecords(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const userId = req.user?.id;
-      const files = req.files as Express.Multer.File[];
-      const { customFields, title, note, comments, status } = req.body;
-
-      if (!userId) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      // Get existing record to validate
-      const existingRecord = await RecordService.getRecordById(id);
-      if (!existingRecord) {
-        return res.status(404).json({ error: 'Record not found' });
-      }
-
-      // Parse customFields if it's a string
-      let parsedCustomFields = typeof customFields === 'string' ? JSON.parse(customFields) : customFields;
-
-      // Initialize structuredCustomFields
-      const structuredCustomFields: { [key: string]: { fieldId: number; value: any; type: string } } = {};
-      
-      // Only process customFields if they exist
-      if (parsedCustomFields) {
-        Object.entries(parsedCustomFields).forEach(([fieldId, fieldValue]) => {
-          structuredCustomFields[fieldId] = {
-            fieldId: Number(fieldId),
-            value: fieldValue,
-            type: existingRecord.customFields[fieldId]?.type || 'Text/Number with Special Symbols'
-          };
-        });
-
-        // Merge with existing custom fields
-        parsedCustomFields = {
-          ...existingRecord.customFields,
-          ...structuredCustomFields
-        };
-      } else {
-        // If no new customFields provided, use existing ones
-        parsedCustomFields = existingRecord.customFields;
-      }
-
-      console.log('Structured Custom Fields:', JSON.stringify(parsedCustomFields, null, 2));
-
-      // Handle file uploads if any
-      if (files && files.length > 0) {
-        const fileFields = Array.isArray(req.body.fileFields) 
-          ? req.body.fileFields 
-          : [req.body.fileFields];
-
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const fieldId = fileFields[i];
-
-          // Process the file and get file info
-          const fileInfo = await UploadService.uploadFile(file);
-
-          // Update the corresponding field with file information
-          if (parsedCustomFields[fieldId]) {
-            parsedCustomFields[fieldId] = {
-              ...parsedCustomFields[fieldId],
-              value: {
-                fileName: file.originalname,
-                fileSize: file.size,
-                fileType: file.mimetype,
-                filePath: fileInfo.filePath,
-                fileHash: fileInfo.fileHash
-              }
-            };
-          }
-        }
-      }
-
-      // Find the first attachment field if any (for main record file info)
-      let fileInfo = null;
-      for (const fieldId in parsedCustomFields) {
-        const field = parsedCustomFields[fieldId];
-        if (field.type === 'Attachment' && field.value) {
-          fileInfo = field.value;
-          break;
-        }
-      }
-
-      const record = await RecordService.updateRecord(id, {
-        title,
-        customFields: parsedCustomFields,
-        note,
-        comments,
-        lastModifiedBy: userId,
-        status: status || existingRecord.status,
-        // Add file information if present
-        ...(fileInfo && {
-          fileName: fileInfo.fileName,
-          filePath: fileInfo.filePath,
-          fileSize: fileInfo.fileSize,
-          fileType: fileInfo.fileType,
-          fileHash: fileInfo.fileHash,
-        })
-      }, userId);
-
-      res.json(record);
+      console.log('ID:', id);
+      const versions = await RecordService.getOtherRecordsByOriginalId(id);
+      res.json(versions);
     } catch (error) {
-      console.error('Error updating record:', error);
+      console.error('Error getting other records:', error);
       if (error instanceof AppError && error.name === 'NotFoundError') {
         res.status(404).json({ error: error.message });
       } else {
-        res.status(500).json({ error: 'Failed to update record' });
+        res.status(500).json({ error: 'Failed to get other records' });
       }
     }
   }
@@ -417,7 +367,9 @@ export class RecordController {
       const userId = req.user?.id;
       const file = req.file as Express.Multer.File;
       const { note } = req.body;
-
+     // console.log(req.body);
+      //console.log(req.file);
+      //console.log(req.user);
       if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
@@ -445,6 +397,7 @@ export class RecordController {
   }
 
   static async getVersions(req: Request, res: Response) {
+    
     try {
       const { id } = req.params;
       const versions = await RecordService.getRecordVersions(id);
@@ -480,18 +433,20 @@ export class RecordController {
     }
   }
 
-  static async approveRecord(req: Request, res: Response) {
+
+  static async updateRecord(req: Request, res: Response) {
     try {
       const { id } = req.params;
       const userId = req.user?.id;
       const files = req.files as Express.Multer.File[];
-      const { customFields, title, note, comments } = req.body;
+      const { customFields, title, note, comments, status } = req.body;
 
       if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // Get existing record to validate
+      console.log('gelen id:', id);
+      console.log('req.body:', req.body);
       const existingRecord = await RecordService.getRecordById(id);
       if (!existingRecord) {
         return res.status(404).json({ error: 'Record not found' });
@@ -522,6 +477,8 @@ export class RecordController {
         // If no new customFields provided, use existing ones
         parsedCustomFields = existingRecord.customFields;
       }
+
+      //console.log('Structured Custom Fields:', JSON.stringify(parsedCustomFields, null, 2));
 
       // Handle file uploads if any
       if (files && files.length > 0) {
@@ -562,10 +519,14 @@ export class RecordController {
         }
       }
 
-      // Prepare the update data
-      const updateData = {
+      const record = await RecordService.updateRecord(id, {
         title,
         customFields: parsedCustomFields,
+        note,
+        comments,
+        lastModifiedBy: userId,
+        status: status || existingRecord.status,
+        // Add file information if present
         ...(fileInfo && {
           fileName: fileInfo.fileName,
           filePath: fileInfo.filePath,
@@ -573,41 +534,251 @@ export class RecordController {
           fileType: fileInfo.fileType,
           fileHash: fileInfo.fileHash,
         })
-      };
+      }, userId);
 
-      const record = await RecordService.approveRecord(id, userId, note, updateData);
       res.json(record);
     } catch (error) {
-      console.error('Error approving record:', error);
-      if (error instanceof AppError) {
-        res.status(error.statusCode).json({ error: error.message });
+      console.error('Error updating record:', error);
+      if (error instanceof AppError && error.name === 'NotFoundError') {
+        res.status(404).json({ error: error.message });
       } else {
-        res.status(500).json({ error: 'Failed to approve record' });
+        res.status(500).json({ error: 'Failed to update record' });
       }
     }
   }
 
-  static async rejectRecord(req: Request, res: Response) {
-    try {
-      const { id } = req.params;
-      const userId = req.user?.id;
-      const { note, comments } = req.body;
 
-      if (!userId) {
+  static async modifyRecord(req: Request, res: Response) {
+    try {
+      const recordId = req.params.id;
+      const creatorId = req.user?.id;
+      if (!creatorId) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
+  
+      // FormData-dan gələn JSON sətirlərini parse edirik, boş stringləri yoxlayaraq default dəyər təyin edirik
+      const title = req.body.title;
+      const cabinetId = req.body.cabinetId;
+      const status = req.body.status;
+      const tags =
+  typeof req.body.tags === 'string'
+    ? req.body.tags.trim().length > 0
+      ? JSON.parse(req.body.tags)
+      : []
+    : req.body.tags || [];
 
-      const record = await RecordService.rejectRecord(id, userId, note, comments);
-      res.json(record);
+const customFields =
+  typeof req.body.customFields === 'string'
+    ? req.body.customFields.trim().length > 0
+      ? JSON.parse(req.body.customFields)
+      : {}
+    : req.body.customFields || {};
+
+  
+      // Faylları işləyirik
+      const files = req.files as Express.Multer.File[];
+      const processedCustomFields = { ...customFields };
+      let pdfFile: Express.Multer.File | undefined;
+      if (files && Array.isArray(files)) {
+        for (const file of files) {
+          const fieldId = file.fieldname;
+          if (fieldId === 'pdfFile' && file.mimetype === 'application/pdf') {
+            pdfFile = file;
+            continue;
+          }
+          if (file) {
+            // Fayl yüklənməsi üçün UploadService istifadə olunur
+            const uploadResult = await UploadService.uploadFile(file);
+            processedCustomFields[fieldId] = {
+              fileName: uploadResult.fileName,
+              fileSize: uploadResult.fileSize,
+              fileType: uploadResult.fileType,
+              filePath: uploadResult.filePath,
+              fileHash: uploadResult.fileHash,
+              pageCount: uploadResult.pageCount,
+            };
+          }
+        }
+      }
+  
+      // Service funksiyasını çağıraraq, yeni versiyanı yaradırıq
+      const modifiedRecord = await RecordService.modifyRecord({
+        recordId,
+        title,
+        cabinetId,
+        creatorId,
+        customFields: processedCustomFields,
+        status,
+        tags,
+        pdfFile,
+      });
+  
+      res.status(200).json(modifiedRecord);
     } catch (error) {
-      console.error('Error rejecting record:', error);
+      console.error('Error modifying record:', error);
       if (error instanceof AppError) {
         res.status(error.statusCode).json({ error: error.message });
       } else {
-        res.status(500).json({ error: 'Failed to reject record' });
+        res.status(500).json({ error: 'Failed to modify record' });
       }
     }
   }
+  
+
+  // Approve Record
+static async approveRecord(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    const files = req.files as Express.Multer.File[];
+    const title = req.body.title;
+    const note = req.body.note;
+    const comments = req.body.comments;
+    // JSON parse: formData-dan gələn customFields
+    const customFields = JSON.parse(req.body.customFields || '{}');
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Mövcud recordu əldə edirik
+    const existingRecord = await RecordService.getRecordById(id);
+    if (!existingRecord) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    // Fayl yükləmələrini emal edərək customFields obyektini yeniləyirik
+    const processedCustomFields = { ...customFields };
+    if (files && Array.isArray(files)) {
+      for (const file of files) {
+        const fieldId = file.fieldname; // FormData-da field name olaraq custom field id təyin olunmalıdır
+        const uploadResult = await UploadService.uploadFile(file);
+        processedCustomFields[fieldId] = {
+          fileName: uploadResult.fileName,
+          fileSize: uploadResult.fileSize,
+          fileType: uploadResult.fileType,
+          filePath: uploadResult.filePath,
+          fileHash: uploadResult.fileHash,
+          pageCount: uploadResult.pageCount
+        };
+      }
+    }
+
+    // Kabinetin konfiqurasiyasını əldə edib, customFields-i validasiya edirik
+    const cabinet = await Cabinet.findByPk(existingRecord.cabinetId);
+    if (!cabinet) {
+      return res.status(400).json({ error: 'Cabinet not found' });
+    }
+    const validatedFields = await RecordService.validateCustomFields(processedCustomFields, cabinet.customFields);
+
+    // Əgər varsa, ilk attachment sahəsinin file məlumatlarını tapırıq
+    let fileInfo = null;
+    for (const fieldId in validatedFields) {
+      const field = validatedFields[fieldId];
+      if (field.type === 'Attachment' && field.value) {
+        fileInfo = field.value;
+        break;
+      }
+    }
+
+    // Update ediləcək məlumatlar
+    const updateData = {
+      title,
+      customFields: validatedFields,
+      ...(fileInfo && {
+        fileName: fileInfo.fileName,
+        filePath: fileInfo.filePath,
+        fileSize: fileInfo.fileSize,
+        fileType: fileInfo.fileType,
+        fileHash: fileInfo.fileHash,
+      })
+    };
+
+    // Service qatında approve əməliyyatını çağırırıq
+    const record = await RecordService.approveRecord(id, userId, note, updateData);
+    res.json(record);
+  } catch (error) {
+    console.error('Error approving record:', error);
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Failed to approve record' });
+    }
+  }
+}
+
+
+  // Reject Record
+static async rejectRecord(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    const files = req.files as Express.Multer.File[];
+    const title = req.body.title;
+    const note = req.body.note;
+    const comments = req.body.comments;
+    // JSON parse: formData-dan gələn customFields
+    const customFields = JSON.parse(req.body.customFields || '{}');
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Mövcud recordu əldə edirik
+    const existingRecord = await RecordService.getRecordById(id);
+    if (!existingRecord) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    // Fayl yükləmələrini emal edərək customFields obyektini yeniləyirik
+    const processedCustomFields = { ...customFields };
+    if (files && Array.isArray(files)) {
+      for (const file of files) {
+        const fieldId = file.fieldname;
+        const uploadResult = await UploadService.uploadFile(file);
+        processedCustomFields[fieldId] = {
+          fileName: uploadResult.fileName,
+          fileSize: uploadResult.fileSize,
+          fileType: uploadResult.fileType,
+          filePath: uploadResult.filePath,
+          fileHash: uploadResult.fileHash,
+          pageCount: uploadResult.pageCount
+        };
+      }
+    }
+
+    // Kabinetin konfiqurasiyasını əldə edib, customFields-i validasiya edirik
+    const cabinet = await Cabinet.findByPk(existingRecord.cabinetId);
+    if (!cabinet) {
+      return res.status(400).json({ error: 'Cabinet not found' });
+    }
+    const validatedFields = await RecordService.validateCustomFields(processedCustomFields, cabinet.customFields);
+
+    // Update ediləcək məlumatlar
+    const updateData = {
+      title,
+      customFields: validatedFields,
+    };
+
+    // Service qatında reject əməliyyatını çağırırıq
+    const record = await RecordService.rejectRecord(id, userId, note, comments, updateData);
+    res.json(record);
+  } catch (error) {
+    console.error('Error rejecting record:', error);
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Failed to reject record' });
+    }
+  }
+}
+
+
+
+static async reassignRecord(req: Request, res: Response, next: NextFunction) {
+  
+  }
+
 
   static async getMyRecordsByStatus(req: Request, res: Response) {
     try {
@@ -651,6 +822,7 @@ export class RecordController {
   static async getRecordsWaitingForMyApproval(req: Request, res: Response) {
     try {
       const userId = req.user?.id;
+      console.log('User ID:', userId);
       
       if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });

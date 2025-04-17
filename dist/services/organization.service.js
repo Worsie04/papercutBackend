@@ -49,7 +49,7 @@ class OrganizationService {
             include: [
                 {
                     model: user_model_1.User,
-                    as: 'userOwner',
+                    as: 'organizationOwner',
                     required: false,
                     where: sequelize_1.Sequelize.literal('"Organization"."owner_type" = \'user\''),
                     attributes: ['id', ['first_name', 'firstName'], ['last_name', 'lastName'], 'email']
@@ -67,7 +67,7 @@ class OrganizationService {
             nest: true
         });
         return organizations.map(org => {
-            const owner = org.owner_type === 'user' ? org.userOwner : org.adminOwner;
+            const owner = org.owner_type === 'user' ? org.organizationOwner : org.adminOwner;
             return Object.assign(Object.assign({}, org), { owner: owner ? `${owner.firstName} ${owner.lastName}` : 'Unknown' });
         });
     }
@@ -76,7 +76,7 @@ class OrganizationService {
             include: [
                 {
                     model: user_model_1.User,
-                    as: 'userOwner',
+                    as: 'organizationOwner',
                     attributes: ['id', 'first_name', 'last_name', 'email'],
                     required: false
                 },
@@ -129,7 +129,7 @@ class OrganizationService {
             include: [
                 {
                     model: user_model_1.User,
-                    as: 'userOwner',
+                    as: 'organizationOwner',
                     attributes: ['id', 'first_name', 'last_name', 'email'],
                     required: false
                 },

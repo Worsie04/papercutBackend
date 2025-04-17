@@ -84,6 +84,10 @@ User.init({
         type: sequelize_1.DataTypes.DATE,
         allowNull: true,
     },
+    position: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+    },
 }, {
     sequelize: sequelize_2.sequelize,
     modelName: 'User',

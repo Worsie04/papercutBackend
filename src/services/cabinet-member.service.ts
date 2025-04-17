@@ -141,7 +141,7 @@ export class CabinetMemberService {
       throw new AppError(404, 'Cabinet member not found');
     }
 
-    return member.permissions;
+    return member.permissions as CabinetMemberPermissions;
   }
 
   static async checkMemberAccess(

@@ -89,6 +89,7 @@ export class UserController {
   static async updateUser(req: Request<{ id: string }, {}, UpdateUserRequest>, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
+      console.log('Update user request body:', req.body);
       const user = await UserService.updateUser(id, req.body);
       res.json(user);
     } catch (error) {

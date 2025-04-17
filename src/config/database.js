@@ -4,46 +4,20 @@ module.exports = {
   development: {
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
-    database: process.env.DB_NAME || 'latest_worsie',
+    database: process.env.DB_NAME || 'worsie_db',
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     dialect: 'postgres',
-    define: {
-      timestamps: true,
-      underscored: true,
-    },
-    pool: {
-      max: 20,
-      min: 0,
-      idle: 10000,
-      acquire: 30000,
-    },
-    dialectOptions: {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false,
-      },
-      statement_timeout: 10000,
-      idle_in_transaction_session_timeout: 10000,
-    },
+    logging: false
   },
   test: {
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
-    database: process.env.TEST_DB_NAME || 'latest_worsie_test_db',
+    database: process.env.TEST_DB_NAME || 'worsie_test_db',
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     dialect: 'postgres',
-    define: {
-      timestamps: true,
-      underscored: true,
-    },
-    pool: {
-      max: 20,
-      min: 0,
-      idle: 10000,
-      acquire: 30000,
-    },
+    logging: false
   },
   production: {
     username: process.env.DB_USER,
@@ -52,23 +26,12 @@ module.exports = {
     host: process.env.DB_HOST,
     port: parseInt(process.env.DB_PORT || '5432', 10),
     dialect: 'postgres',
-    define: {
-      timestamps: true,
-      underscored: true,
-    },
-    pool: {
-      max: 20,
-      min: 0,
-      idle: 10000,
-      acquire: 30000,
-    },
+    logging: false,
     dialectOptions: {
       ssl: {
         require: true,
-        rejectUnauthorized: false,
-      },
-      statement_timeout: 10000,
-      idle_in_transaction_session_timeout: 10000,
-    },
-  },
+        rejectUnauthorized: false
+      }
+    }
+  }
 }; 

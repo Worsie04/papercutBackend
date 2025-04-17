@@ -1,26 +1,22 @@
-import { DataTypes } from 'sequelize';
-import { BaseModel, baseModelConfig } from './base.model';
+import { Model, DataTypes } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
 import { User } from './user.model';
-import { BelongsToGetAssociationMixin } from 'sequelize';
-
-export interface CustomField {
-  id: number;
-  name: string;
-  type: string;
-  isMandatory: boolean;
-  isApiReady: boolean;
-  duplication: 'Notify' | 'Deny' | 'Allow';
-  source: string;
-  selectedIcon: 'paperClip' | 'eye' | 'user' | null;
-}
 
 export interface CabinetApprover {
   userId: string;
   order: number;
 }
 
-export class Cabinet extends BaseModel {
+export interface CustomField {
+  [x: string]: any;
+  name: string;
+  type: string;
+  required: boolean;
+  options?: string[];
+}
+
+export class Cabinet extends Model {
+  public id!: string;
   public name!: string;
   public company!: string;
   public description?: string;
@@ -30,22 +26,29 @@ export class Cabinet extends BaseModel {
   public metadata?: any;
   public settings!: any;
   public customFields!: CustomField[];
-  public members!: string[];
+  public memberIds!: string[];
   public approvers!: CabinetApprover[];
   public approverNote?: string;
   public isActive!: boolean;
   public createdById!: string;
   public status!: 'pending' | 'approved' | 'rejected';
   public rejectionReason?: string;
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
+  public readonly deletedAt!: Date | null;
 
-  // Association methods
-  public getCreatedBy!: BelongsToGetAssociationMixin<User>;
-  public readonly createdBy?: User;
+  // Associations
+  public readonly creator?: User;
+  public readonly cabinetUsers?: User[];
 }
 
 Cabinet.init(
   {
-    ...baseModelConfig,
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
     name: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -61,6 +64,7 @@ Cabinet.init(
     spaceId: {
       type: DataTypes.UUID,
       allowNull: false,
+      field: 'space_id',
       references: {
         model: 'spaces',
         key: 'id',
@@ -69,6 +73,7 @@ Cabinet.init(
     parentId: {
       type: DataTypes.UUID,
       allowNull: true,
+      field: 'parent_id',
       references: {
         model: 'cabinets',
         key: 'id',
@@ -92,11 +97,13 @@ Cabinet.init(
       type: DataTypes.JSONB,
       allowNull: false,
       defaultValue: [],
+      field: 'custom_fields',
     },
-    members: {
-      type: DataTypes.ARRAY(DataTypes.UUID),
+    memberIds: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
       allowNull: false,
       defaultValue: [],
+      field: 'members',
     },
     approvers: {
       type: DataTypes.JSONB,
@@ -106,20 +113,22 @@ Cabinet.init(
     approverNote: {
       type: DataTypes.TEXT,
       allowNull: true,
+      field: 'approver_note',
     },
     isActive: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true,
+      field: 'is_active',
     },
     createdById: {
       type: DataTypes.UUID,
       allowNull: false,
+      field: 'created_by_id',
       references: {
         model: 'users',
         key: 'id',
       },
-      field: 'created_by_id',
     },
     status: {
       type: DataTypes.ENUM('pending', 'approved', 'rejected'),
@@ -129,14 +138,31 @@ Cabinet.init(
     rejectionReason: {
       type: DataTypes.TEXT,
       allowNull: true,
+      field: 'rejection_reason',
+    },
+    createdAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: 'created_at',
+    },
+    updatedAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: 'updated_at',
+    },
+    deletedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'deleted_at',
     },
   },
   {
     sequelize,
-    modelName: 'Cabinet',
     tableName: 'cabinets',
     paranoid: true,
   }
 );
+
+
 
 export default Cabinet; 

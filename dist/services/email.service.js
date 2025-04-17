@@ -80,6 +80,81 @@ class EmailService {
             html,
         });
     }
+    static async sendTemplateShareEmail(toEmail, sharedByUserFullName, templateName, templateId // Needed to create a link to the template
+    ) {
+        // --- Construct the URL to view the template ---
+        // !!! IMPORTANT: Adjust this URL structure based on your frontend routing !!!
+        // Example: Assumes a route like /dashboard/templates/shared/:templateId
+        const templateViewUrl = `${config_1.config.clientUrl}/dashboard/Templates/Created/ViewTemplate?templateId=${templateId}`; // Using existing view for simplicity now
+        // --------------------------------------------------
+        const emailSubject = `Template Shared: ${templateName || 'Untitled Template'}`;
+        const html = `
+      <div style="font-family: sans-serif; line-height: 1.6;">
+        <h2>Template Shared With You</h2>
+        <p>Hello,</p>
+        <p><b>${sharedByUserFullName}</b> has shared the template "<b>${templateName || 'Untitled Template'}</b>" with you.</p>
+        <p>You can view the template by clicking the button below:</p>
+        <p style="margin: 20px 0;">
+          <a href="${templateViewUrl}" style="
+            display: inline-block;
+            padding: 12px 25px;
+            background-color: #007bff; /* Blue */
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+          ">View Template</a>
+        </p>
+        <p>Best regards,<br>The Worsie Team</p> {/* Adjust closing */}
+      </div>
+    `;
+        try {
+            await this.sendEmail({
+                to: toEmail,
+                subject: emailSubject,
+                html,
+            });
+            console.log(`Template share email successfully sent to ${toEmail}`);
+        }
+        catch (error) {
+            console.error(`Error sending template share email to ${toEmail}:`, error);
+        }
+    }
+    static async sendReviewRequestEmail(toEmail, reviewerName, submitterFullName, letterName, letterViewUrl // Direct link to the review page/item
+    ) {
+        const emailSubject = `Review Request: ${letterName}`;
+        const html = `
+      <div style="font-family: sans-serif; line-height: 1.6;">
+        <h2>Letter Review Request</h2>
+        <p>Hello ${reviewerName || 'Reviewer'},</p>
+        <p><b>${submitterFullName}</b> has submitted the letter "<b>${letterName}</b>" which requires your review.</p>
+        <p>Please review the letter by clicking the button below:</p>
+        <p style="margin: 20px 0;">
+          <a href="${letterViewUrl}" style="
+            display: inline-block;
+            padding: 12px 25px;
+            background-color: #1890ff; /* Ant Design Primary Blue */
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+          ">Review Letter</a>
+        </p>
+        <p>Best regards,<br>The Worsie Team</p> {/* Adjust closing */}
+      </div>
+    `;
+        try {
+            await this.sendEmail({
+                to: toEmail,
+                subject: emailSubject,
+                html,
+            });
+            console.log(`Review request email successfully sent to ${toEmail} for letter "${letterName}"`);
+        }
+        catch (error) {
+            console.error(`Error sending review request email to ${toEmail}:`, error);
+        }
+    }
 }
 exports.EmailService = EmailService;
 EmailService.transporter = nodemailer_1.default.createTransport({

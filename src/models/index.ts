@@ -13,6 +13,8 @@ import { UserRole } from './user-role.model';
 import { SpaceMember } from './space-member.model';
 import { SpaceCommentReject } from './space-comment-reject.model';
 import { SpaceReassignment } from './space-reassignment.model';
+import { CabinetMember } from './cabinet-member.model';
+import { CabinetMemberPermission } from './cabinet-member-permission.model';
 import File from './file.model';
 import RecordFile from './record-file.model';
 import { Activity } from './activity.model';
@@ -27,6 +29,8 @@ export const initializeModels = (sequelize: Sequelize) => {
     Role,
     Space,
     Cabinet,
+    CabinetMember,
+    CabinetMemberPermission,
     Record,
     Setting,
     Config,
@@ -51,6 +55,8 @@ export {
   Role,
   Space,
   Cabinet,
+  CabinetMember,
+  CabinetMemberPermission,
   Record,
   Setting,
   Config,
@@ -62,3 +68,7 @@ export {
   RecordFile,
   Activity
 };
+
+export * from './cabinet.model';
+export * from './cabinet-member.model';
+export * from './cabinet-member-permission.model';

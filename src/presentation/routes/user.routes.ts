@@ -17,14 +17,16 @@ router.put('/me/password', authenticate(), validate(updatePasswordSchema), UserC
 
 // List users for frontend
 router.get('/list', authenticate(), UserController.getUsers);
-router.get('/superusers', authenticate(), UserController.getSuperUsers);
+router.get('/superusers', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getSuperUsers);
 
 // Admin routes (require admin role)
 router.get('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getUsers);
-router.post('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), validate(createUserSchema), UserController.createUser);
+//router.post('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), validate(createUserSchema), UserController.createUser);
+router.post('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.createUser);
 router.get('/:id', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getUser);
-router.put('/:id', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), validate(updateUserSchema), UserController.updateUser);
-router.delete('/:id', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.deleteUser);
+router.put('/:id', authenticate(), validate(updateUserSchema), UserController.updateUser);
+//router.delete('/:id', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.deleteUser);
+router.delete('/:id', authenticate(), UserController.deleteUser);
 router.post('/:id/activate', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.activateUser);
 router.post('/:id/deactivate', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.deactivateUser);
 router.post('/:id/resend-verification', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.resendVerification);

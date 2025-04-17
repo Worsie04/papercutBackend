@@ -3,9 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CabinetMember = void 0;
 const sequelize_1 = require("sequelize");
 const sequelize_2 = require("../infrastructure/database/sequelize");
-const cabinet_model_1 = require("./cabinet.model");
-const user_model_1 = require("./user.model");
-const cabinet_member_permission_model_1 = require("./cabinet-member-permission.model");
 class CabinetMember extends sequelize_1.Model {
 }
 exports.CabinetMember = CabinetMember;
@@ -34,9 +31,9 @@ CabinetMember.init({
         },
     },
     role: {
-        type: sequelize_1.DataTypes.ENUM('owner', 'member', 'viewer'),
+        type: sequelize_1.DataTypes.ENUM('member_full', 'member_read', 'member_write', 'admin'),
+        defaultValue: 'member_full',
         allowNull: false,
-        defaultValue: 'member',
     },
     permissions: {
         type: sequelize_1.DataTypes.JSONB,
@@ -48,7 +45,7 @@ CabinetMember.init({
             deleteRecords: false,
             manageCabinet: false,
             downloadFiles: true,
-            exportTables: false
+            exportTables: false,
         },
     },
     createdAt: {
@@ -68,36 +65,7 @@ CabinetMember.init({
     },
 }, {
     sequelize: sequelize_2.sequelize,
-    modelName: 'CabinetMember',
     tableName: 'cabinet_members',
-    underscored: true,
     paranoid: true,
 });
-// Set up associations
-CabinetMember.belongsTo(cabinet_model_1.Cabinet, {
-    foreignKey: 'cabinetId',
-    as: 'cabinet',
-});
-CabinetMember.belongsTo(user_model_1.User, {
-    foreignKey: 'userId',
-    as: 'user',
-});
-cabinet_model_1.Cabinet.belongsToMany(user_model_1.User, {
-    through: CabinetMember,
-    foreignKey: 'cabinetId',
-    otherKey: 'userId',
-    as: 'users',
-});
-user_model_1.User.belongsToMany(cabinet_model_1.Cabinet, {
-    through: CabinetMember,
-    foreignKey: 'userId',
-    otherKey: 'cabinetId',
-    as: 'cabinets',
-});
-// Change the association name from 'permissions' to 'memberPermissions'
-CabinetMember.hasOne(cabinet_member_permission_model_1.CabinetMemberPermission, {
-    foreignKey: 'cabinetId',
-    sourceKey: 'cabinetId',
-    as: 'memberPermissions',
-    constraints: false
-});
+exports.default = CabinetMember;

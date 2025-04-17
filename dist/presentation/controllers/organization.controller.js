@@ -93,10 +93,8 @@ class OrganizationController {
                 throw new errorHandler_1.AppError(401, 'Unauthorized');
             }
             const organizations = await organization_service_1.OrganizationService.getOrganizationsByOwner(userId, userType === 'admin' ? 'admin' : 'user');
-            console.log(organizations);
-            // Transform the response to use a consistent owner structure
             const transformedOrganizations = organizations.map(org => (Object.assign(Object.assign({}, org.toJSON()), { owner: org.getOwner() })));
-            console.log(transformedOrganizations);
+            // console.log(transformedOrganizations);
             res.json(transformedOrganizations);
         }
         catch (error) {

@@ -3,8 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Group = void 0;
 const sequelize_1 = require("sequelize");
 const sequelize_2 = require("../infrastructure/database/sequelize");
-const user_model_1 = require("./user.model");
-const organization_model_1 = require("./organization.model");
 class Group extends sequelize_1.Model {
 }
 exports.Group = Group;
@@ -64,19 +62,4 @@ Group.init({
     tableName: 'groups',
     paranoid: true,
     timestamps: true,
-});
-// Define associations
-Group.belongsTo(organization_model_1.Organization, {
-    foreignKey: 'organizationId',
-    as: 'organization',
-});
-Group.belongsTo(user_model_1.User, {
-    foreignKey: 'createdBy',
-    as: 'creator',
-});
-Group.belongsToMany(user_model_1.User, {
-    through: 'group_members',
-    foreignKey: 'groupId',
-    otherKey: 'userId',
-    as: 'members',
 });

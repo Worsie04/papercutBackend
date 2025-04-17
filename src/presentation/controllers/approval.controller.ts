@@ -3,6 +3,20 @@ import { SpaceService } from '../../services/space.service';
 import { CabinetService } from '../../services/cabinet.service';
 import { SpaceCommentService } from '../../services/space-comment.service';
 import { AuthenticatedRequest } from '../../types/express';
+import { RecordService } from '../../services/record.service';
+import { Record as RecordModel } from '../../models/record.model';
+
+interface Creator {
+  id: string;
+  firstName: string;
+  lastName: string;
+  avatar: string | null;
+  email: string;
+}
+
+interface RecordWithCreator extends RecordModel {
+  creator?: Creator;
+}
 
 export class ApprovalController {
   /**
@@ -29,7 +43,6 @@ export class ApprovalController {
 
       // Fetch pending space creation requests
       const pendingSpaces = await SpaceService.getPendingApprovals(userId);
-console.log('pendingSpaces:', pendingSpaces);
       const spaceRequests = pendingSpaces.map(space => ({
         id: space.id,
         type: 'space',
@@ -57,14 +70,16 @@ console.log('pendingSpaces:', pendingSpaces);
    */
   static async getMyPendingApprovals(req: AuthenticatedRequest, res: Response) {
     try {
+      const { status } = req.query;
       const userId = req.user?.id;
+      const statusStr = typeof status === 'string' ? status : '';
 
       if (!userId) {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
       // Fetch pending cabinet creation requests created by current user
-      const pendingCabinets = await CabinetService.getMyPendingApprovals(userId);
+      const pendingCabinets = await CabinetService.getMyPendingApprovals(userId, statusStr);
       const cabinetRequests = pendingCabinets.map(cabinet => ({
         id: cabinet.id,
         type: 'cabinet',
@@ -77,7 +92,7 @@ console.log('pendingSpaces:', pendingSpaces);
 
       // Fetch pending space creation requests created by current user
       const pendingSpaces = await SpaceService.getMyPendingApprovals(userId);
-const spaceRequests = pendingSpaces.map(space => ({
+      const spaceRequests = pendingSpaces.map(space => ({
         id: space.id,
         type: 'space',
         name: space.name,
@@ -111,6 +126,25 @@ const spaceRequests = pendingSpaces.map(space => ({
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
+      const pendingRecords = await RecordService.getRecordsWaitingForMyApproval(userId);
+      const recordRequests = pendingRecords.map((record: RecordWithCreator) => ({
+        id: record.id,
+        type: 'record',
+        name: record.title,
+        createdBy: record.creator ? {
+          id: record.creator.id,
+          name: `${record.creator.firstName} ${record.creator.lastName}`,
+          avatar: record.creator.avatar
+        } : {
+          id: record.creatorId,
+          name: 'Unknown User',
+          avatar: null
+        },
+        createdAt: record.createdAt,
+        status: 'pending',
+        priority: 'Med',
+      }));
+
       // Fetch cabinet creation requests waiting for current user's approval
       const pendingCabinets = await CabinetService.getApprovalsWaitingFor(userId);
       const cabinetRequests = pendingCabinets.map(cabinet => ({
@@ -125,7 +159,7 @@ const spaceRequests = pendingSpaces.map(space => ({
 
       // Fetch space creation requests waiting for current user's approval
       const pendingSpaces = await SpaceService.getApprovalsWaitingFor(userId);
-const spaceRequests = pendingSpaces.map(space => ({
+      const spaceRequests = pendingSpaces.map(space => ({
         id: space.id,
         type: 'space',
         name: space.name,
@@ -136,7 +170,7 @@ const spaceRequests = pendingSpaces.map(space => ({
       }));
 
       // Combine all requests
-      const allRequests = [...cabinetRequests, ...spaceRequests];
+      const allRequests = [...cabinetRequests, ...spaceRequests, ...recordRequests];
       
       // Sort by creation date, newest first
       allRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -148,9 +182,6 @@ const spaceRequests = pendingSpaces.map(space => ({
     }
   }
 
-  /**
-   * Approve a request (space or cabinet)
-   */
   static async approveRequest(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -187,9 +218,6 @@ const spaceRequests = pendingSpaces.map(space => ({
     }
   }
 
-  /**
-   * Reject a request (space or cabinet)
-   */
   static async rejectRequest(req: Request, res: Response) {
     try {
       const { id } = req.params;

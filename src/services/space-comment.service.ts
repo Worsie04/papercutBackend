@@ -1,12 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { AppError } from '../presentation/middlewares/errorHandler';
 import { Space, User, SpaceCommentReject } from '../models';
+import { Transaction } from 'sequelize';
 
 interface CreateCommentParams {
   spaceId: string;
   userId: string;
   message: string;
   type: 'comment' | 'rejection' | 'approval' | 'update' | 'system';
+  transaction?: Transaction;
 }
 
 interface SpaceComment {
@@ -49,14 +51,18 @@ export class SpaceCommentService {
   static async createComment(data: CreateCommentParams): Promise<SpaceComment> {
     try {
       // Check if space exists
-      const space = await Space.findByPk(data.spaceId);
+      const space = await Space.findByPk(data.spaceId, {
+        transaction: data.transaction
+      });
 
       if (!space) {
         throw new AppError(404, 'Space not found');
       }
 
       // Check if user exists
-      const user = await User.findByPk(data.userId);
+      const user = await User.findByPk(data.userId, {
+        transaction: data.transaction
+      });
 
       if (!user) {
         throw new AppError(404, 'User not found');
@@ -69,6 +75,8 @@ export class SpaceCommentService {
         userId: data.userId,
         message: data.message,
         type: data.type
+      }, {
+        transaction: data.transaction
       });
 
       return {

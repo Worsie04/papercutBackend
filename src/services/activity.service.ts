@@ -4,6 +4,7 @@ import { OrganizationMember } from '../models/organization-member.model';
 import { AppError } from '../presentation/middlewares/errorHandler';
 import { Op } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
+import { Transaction } from 'sequelize';
 
 export interface ActivityParams {
   userId: string;
@@ -12,6 +13,7 @@ export interface ActivityParams {
   resourceId: string;
   resourceName: string;
   details?: string;
+  transaction?: Transaction;
 }
 
 export class ActivityService {
@@ -20,10 +22,10 @@ export class ActivityService {
    */
   static async logActivity(params: ActivityParams): Promise<Activity> {
     try {
-      const { userId, action, resourceType, resourceId, resourceName, details } = params;
+      const { userId, action, resourceType, resourceId, resourceName, details, transaction } = params;
 
       // Validate user exists
-      const user = await User.findByPk(userId);
+      const user = await User.findByPk(userId, { transaction });
       if (!user) {
         throw new AppError(400, 'User not found');
       }
@@ -38,8 +40,10 @@ export class ActivityService {
           break;
         case ActivityType.SUBMIT:
         case ActivityType.RESUBMIT:
-        case ActivityType.REASSIGN:
           status = ActivityStatus.PENDING;
+          break;
+        case ActivityType.REASSIGN:
+          status = ActivityStatus.REASSIGNED;
           break;
         case ActivityType.REJECT:
         case ActivityType.DELETE:
@@ -60,7 +64,7 @@ export class ActivityService {
         details: details || '',
         status,
         timestamp: new Date()
-      });
+      }, { transaction });
 
       return activity;
     } catch (error) {
@@ -366,8 +370,7 @@ export class ActivityService {
         order: [['timestamp', 'DESC']],
         limit,
       });
-      console.log('activities', activities);
-
+      
       return activities;
     } catch (error) {
       console.error('Error fetching recent activities:', error);

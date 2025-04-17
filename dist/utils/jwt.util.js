@@ -17,7 +17,16 @@ class JwtUtil {
             return jsonwebtoken_1.default.verify(token, this.SECRET);
         }
         catch (error) {
-            throw new Error('Invalid token');
+            // Provide more specific error messages based on the type of error
+            if (error.name === 'TokenExpiredError') {
+                throw new Error('Token has expired');
+            }
+            else if (error.name === 'JsonWebTokenError') {
+                throw new Error(`Invalid token: ${error.message}`);
+            }
+            else {
+                throw new Error(`Token verification failed: ${error.message}`);
+            }
         }
     }
     static decodeToken(token) {

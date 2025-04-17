@@ -11,16 +11,20 @@ const router = (0, express_1.Router)();
 const twoFactorController = new twoFactor_controller_1.TwoFactorController();
 // Current user routes (only require authentication)
 router.get('/me', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.getCurrentUser);
+router.get('/me/checkAllTables', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.getUserWithRelatedData);
 router.put('/me', (0, auth_middleware_1.authenticate)(), (0, validate_middleware_1.validate)(user_validator_1.updateProfileSchema), user_controller_1.UserController.updateProfile);
 router.put('/me/password', (0, auth_middleware_1.authenticate)(), (0, validate_middleware_1.validate)(user_validator_1.updatePasswordSchema), user_controller_1.UserController.updatePassword);
 // List users for frontend
 router.get('/list', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.getUsers);
+router.get('/superusers', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.getSuperUsers);
 // Admin routes (require admin role)
 router.get('/', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.getUsers);
-router.post('/', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), (0, validate_middleware_1.validate)(user_validator_1.createUserSchema), user_controller_1.UserController.createUser);
+//router.post('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), validate(createUserSchema), UserController.createUser);
+router.post('/', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.createUser);
 router.get('/:id', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.getUser);
-router.put('/:id', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), (0, validate_middleware_1.validate)(user_validator_1.updateUserSchema), user_controller_1.UserController.updateUser);
-router.delete('/:id', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.deleteUser);
+router.put('/:id', (0, auth_middleware_1.authenticate)(), (0, validate_middleware_1.validate)(user_validator_1.updateUserSchema), user_controller_1.UserController.updateUser);
+//router.delete('/:id', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.deleteUser);
+router.delete('/:id', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.deleteUser);
 router.post('/:id/activate', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.activateUser);
 router.post('/:id/deactivate', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.deactivateUser);
 router.post('/:id/resend-verification', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.resendVerification);

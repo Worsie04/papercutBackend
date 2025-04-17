@@ -36,13 +36,13 @@ class OrganizationMemberController {
             const { role, customPermissions, status, firstName, lastName } = req.body;
             // Check if the organization exists
             await organization_service_1.OrganizationService.getOrganization(organizationId);
-            console.log(userId);
-            console.log(organizationId);
-            console.log(role);
-            console.log(customPermissions);
-            console.log(status);
-            console.log(firstName);
-            console.log(lastName);
+            // console.log(userId);
+            // console.log(organizationId);
+            // console.log(role);
+            // console.log(customPermissions);
+            // console.log(status);
+            // console.log(firstName);
+            // console.log(lastName);
             // First, find the member to get the associated user
             const member = await organization_member_model_1.OrganizationMember.findOne({
                 where: {

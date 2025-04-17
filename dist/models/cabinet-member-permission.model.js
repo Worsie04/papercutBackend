@@ -3,8 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CabinetMemberPermission = void 0;
 const sequelize_1 = require("sequelize");
 const sequelize_2 = require("../infrastructure/database/sequelize");
-const user_model_1 = require("./user.model");
-const cabinet_model_1 = require("./cabinet.model");
 class CabinetMemberPermission extends sequelize_1.Model {
 }
 exports.CabinetMemberPermission = CabinetMemberPermission;
@@ -19,7 +17,7 @@ CabinetMemberPermission.init({
         allowNull: false,
         field: 'user_id',
         references: {
-            model: user_model_1.User,
+            model: 'users',
             key: 'id',
         },
     },
@@ -28,7 +26,16 @@ CabinetMemberPermission.init({
         allowNull: false,
         field: 'cabinet_id',
         references: {
-            model: cabinet_model_1.Cabinet,
+            model: 'cabinets',
+            key: 'id',
+        },
+    },
+    cabinetMemberId: {
+        type: sequelize_1.DataTypes.UUID,
+        allowNull: false,
+        field: 'cabinet_member_id',
+        references: {
+            model: 'cabinet_members',
             key: 'id',
         },
     },
@@ -52,28 +59,22 @@ CabinetMemberPermission.init({
     },
     createdAt: {
         type: sequelize_1.DataTypes.DATE,
+        allowNull: false,
         field: 'created_at',
     },
     updatedAt: {
         type: sequelize_1.DataTypes.DATE,
+        allowNull: false,
         field: 'updated_at',
     },
     deletedAt: {
         type: sequelize_1.DataTypes.DATE,
+        allowNull: true,
         field: 'deleted_at',
     },
 }, {
     sequelize: sequelize_2.sequelize,
     tableName: 'cabinet_member_permissions',
     paranoid: true,
-    timestamps: true,
 });
-// Define associations
-CabinetMemberPermission.belongsTo(user_model_1.User, {
-    foreignKey: 'userId',
-    as: 'user',
-});
-CabinetMemberPermission.belongsTo(cabinet_model_1.Cabinet, {
-    foreignKey: 'cabinetId',
-    as: 'cabinet',
-});
+exports.default = CabinetMemberPermission;

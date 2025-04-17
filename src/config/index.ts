@@ -2,6 +2,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Make sure we have a secret defined
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret && process.env.NODE_ENV === 'production') {
+  console.error('WARNING: JWT_SECRET environment variable not set in production environment!');
+}
+
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '4000', 10),//4000 idi
@@ -17,7 +23,7 @@ export const config = {
    
   // JWT
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
+    secret: jwtSecret || 'development-only-secret-key-do-not-use-in-production',
     expiresIn: process.env.JWT_EXPIRES_IN || '1d',
   },
   
@@ -56,4 +62,4 @@ export const config = {
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '9000000', 10), // 15 minutes
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
   },
-}; 
+};

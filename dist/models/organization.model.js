@@ -9,8 +9,8 @@ const organization_member_model_1 = require("./organization-member.model");
 class Organization extends sequelize_1.Model {
     // Helper method to get the appropriate owner
     getOwner() {
-        if (this.owner_type === 'user' && this.userOwner) {
-            return this.userOwner;
+        if (this.owner_type === 'user' && this.organizationOwner) {
+            return this.organizationOwner;
         }
         else if (this.owner_type === 'admin' && this.adminOwner) {
             return this.adminOwner;
@@ -120,7 +120,7 @@ Organization.init({
         withUserOwner: {
             include: [{
                     model: user_model_1.User,
-                    as: 'userOwner',
+                    as: 'organizationOwner',
                     required: false,
                     where: {
                         '$Organization.owner_type$': 'user'

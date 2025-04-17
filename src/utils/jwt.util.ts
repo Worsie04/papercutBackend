@@ -21,8 +21,15 @@ export class JwtUtil {
   static verifyToken(token: string): TokenPayload {
     try {
       return jwt.verify(token, this.SECRET) as TokenPayload;
-    } catch (error) {
-      throw new Error('Invalid token');
+    } catch (error: any) {
+      // Provide more specific error messages based on the type of error
+      if (error.name === 'TokenExpiredError') {
+        throw new Error('Token has expired');
+      } else if (error.name === 'JsonWebTokenError') {
+        throw new Error(`Invalid token: ${error.message}`);
+      } else {
+        throw new Error(`Token verification failed: ${error.message}`);
+      }
     }
   }
 
@@ -39,4 +46,4 @@ export class JwtUtil {
       expiresIn: '7d',
     });
   }
-} 
+}

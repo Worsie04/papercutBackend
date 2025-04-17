@@ -12,6 +12,10 @@ import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
 import fileService from './file.service';
+import { ActivityService } from './activity.service';
+import { ActivityType, ResourceType } from '../models/activity.model';
+import { NotificationService } from './notification.service';
+import RecordOtherVersion from '../models/recordOtherVersion.model';
 
 const { PDFExtract } = require('pdf.js-extract');
 const pdfExtract = new PDFExtract();
@@ -35,6 +39,17 @@ interface CustomFieldValue {
   fileType?: string;
   filePath?: string;
   fileHash?: string;
+}
+
+interface ModifyRecordData {
+  recordId: string;
+  title: string;
+  cabinetId: string;
+  creatorId: string;
+  customFields: { [key: string]: any };
+  status: string;
+  tags: string[];
+  pdfFile?: Express.Multer.File;
 }
 
 interface ExtendedCustomField extends CustomField {
@@ -435,18 +450,16 @@ export class RecordService {
   ): Promise<{ [key: string]: CustomFieldValue }> {
     const validatedFields: { [key: string]: CustomFieldValue } = {};
 
-    console.log('Submitted Fields:', JSON.stringify(submittedFields, null, 2));
-    console.log('Cabinet Fields:', JSON.stringify(cabinetFields, null, 2));
-
+   
     for (const field of cabinetFields) {
-      console.log(`Processing field: ${field.name} (${field.type})`);
+     // console.log(`Processing field: ${field.name} (${field.type})`);
       
       const submittedField = submittedFields[field.id];
-      console.log('Submitted field value:', submittedField);
+     // console.log('Submitted field value:', submittedField);
 
       // Handle mandatory field validation
       if (field.isMandatory) {
-        console.log(`Field ${field.name} is mandatory`);
+       // console.log(`Field ${field.name} is mandatory`);
         
         if (field.type === 'Attachment') {
           // For attachment fields, check if there's a valid value object
@@ -454,10 +467,10 @@ export class RecordService {
             ((submittedField.value && Object.keys(submittedField.value).length > 0) || 
              (typeof submittedField === 'object' && (submittedField.filePath || submittedField.fileName)));
           
-          console.log('Attachment field validation:', {
-            hasValidValue,
-            submittedField: submittedField
-          });
+         // console.log('Attachment field validation:', {
+          //  hasValidValue,
+          //  submittedField: submittedField
+          //});
 
           if (!hasValidValue) {
             throw new AppError(400, `Field '${field.name}' is mandatory`);
@@ -466,10 +479,10 @@ export class RecordService {
           // For non-attachment fields
           const hasValue = submittedField !== undefined && submittedField !== null && submittedField !== '';
           
-          console.log('Non-attachment field validation:', {
-            hasValue,
-            submittedField: submittedField
-          });
+         // console.log('Non-attachment field validation:', {
+          //  hasValue,
+          //  submittedField: submittedField
+          //});
 
           if (!hasValue) {
             throw new AppError(400, `Field '${field.name}' is mandatory`);
@@ -496,7 +509,7 @@ export class RecordService {
         }
       }
 
-      console.log(`Validated field ${field.name}:`, validatedFields[field.id]);
+     // console.log(`Validated field ${field.name}:`, validatedFields[field.id]);
     }
 
     return validatedFields;
@@ -622,6 +635,34 @@ export class RecordService {
   }
 
   static async getRecordById(id: string) {
+    
+    // const versions = await RecordOtherVersion.findAll({
+    //   where: { originalRecordId : id },
+    //   order: [['version', 'ASC']],
+    // });
+
+    // if (versions && versions.length > 0) {
+    //   // Versiyalar varsa, sonuncusunu plain obyektə çeviririk
+    //   const latestVersion = versions[versions.length - 1].get({ plain: true });
+      
+    //   // customFields-i işləyirik (əgər lazımdır)
+    //   if (latestVersion.customFields) {
+    //     for (const fieldId in latestVersion.customFields) {
+    //       const field = latestVersion.customFields[fieldId];
+    //       if (field.type === 'Attachment' && field.value) {
+    //         field.value = {
+    //           fileName: field.value.fileName || field.fileName,
+    //           filePath: field.value.filePath || field.filePath,
+    //           fileSize: field.value.fileSize || field.fileSize,
+    //           fileType: field.value.fileType || field.fileType,
+    //           fileHash: field.value.fileHash || field.fileHash,
+    //         };
+    //       }
+    //     }
+    //   }
+    //   return latestVersion;
+    // } else {
+      
     const record = await Record.findByPk(id, {
       include: [
         {
@@ -630,7 +671,8 @@ export class RecordService {
         },
         {
           model: User,
-          as: 'creator'
+          as: 'creator',
+          attributes: ['id', 'firstName', 'lastName', 'avatar']
         },
         {
           model: RecordNoteComment,
@@ -640,7 +682,7 @@ export class RecordService {
           include: [{
             model: User,
             as: 'creator',
-            attributes: ['id', 'firstName', 'lastName']
+            attributes: ['id', 'firstName', 'lastName', 'avatar']
           }],
           order: [['createdAt', 'DESC']],
           limit: 1 // Get only the latest note
@@ -653,7 +695,7 @@ export class RecordService {
           include: [{
             model: User,
             as: 'creator',
-            attributes: ['id', 'firstName', 'lastName']
+            attributes: ['id', 'firstName', 'lastName', 'avatar']
           }],
           order: [['createdAt', 'DESC']]
         }
@@ -690,123 +732,40 @@ export class RecordService {
     }
 
     return record;
+
+  //}
+
   }
 
-  static async updateRecord(id: string, data: Partial<Record> & { note?: string; comments?: string }, userId: string) {
-    const transaction = await sequelize.transaction();
+  static async getOtherRecordsByOriginalId(originalRecordId: string) {
+    const versions = await RecordOtherVersion.findAll({
+      where: { originalRecordId },
+      order: [['version', 'ASC']],
+    });
 
-    try {
-      const record = await Record.findByPk(id);
-      if (!record) {
-        throw new AppError(404, 'Record not found');
-      }
+    if (!versions || versions.length === 0) {
+      throw new AppError(404, 'No versions found for this record');
+    }
 
-      // Update record
-      await record.update({
-        ...data,
-        lastModifiedBy: userId,
-      }, { transaction });
 
-      // Add note if provided
-      if (data.note) {
-        await RecordNoteComment.create({
-          recordId: id,
-          content: data.note,
-          type: 'note',
-          action: 'update',
-          createdBy: userId
-        }, { transaction });
-      }
-
-      // Add comment if provided
-      if (data.comments) {
-        await RecordNoteComment.create({
-          recordId: id,
-          content: data.comments,
-          type: 'comment',
-          createdBy: userId
-        }, { transaction });
-      }
-
-      await transaction.commit();
-
-      // Fetch updated record with notes and comments
-      const updatedRecord = await Record.findByPk(id, {
-        include: [
-          {
-            model: Cabinet,
-            as: 'cabinet'
-          },
-          {
-            model: User,
-            as: 'creator'
-          },
-          {
-            model: RecordNoteComment,
-            as: 'notes',
-            where: { type: 'note' },
-            required: false,
-            include: [{
-              model: User,
-              as: 'creator',
-              attributes: ['id', 'firstName', 'lastName']
-            }],
-            order: [['createdAt', 'DESC']]
-          },
-          {
-            model: RecordNoteComment,
-            as: 'comments',
-            where: { type: 'comment' },
-            required: false,
-            include: [{
-              model: User,
-              as: 'creator',
-              attributes: ['id', 'firstName', 'lastName']
-            }],
-            order: [['createdAt', 'DESC']]
-          }
-        ],
-        attributes: {
-          include: [
-            'id', 'title', 'description', 'cabinetId', 'creatorId',
-            'filePath', 'fileName', 'fileSize', 'fileType', 'fileHash',
-            'version', 'status', 'metadata', 'customFields', 'tags',
-            'isTemplate', 'isActive', 'lastModifiedBy', 'createdAt', 'updatedAt'
-          ]
-        }
-      });
-
-      if (!updatedRecord) {
-        throw new AppError(404, 'Updated record not found');
-      }
-
-      // Process customFields to ensure file information is properly structured
-      if (updatedRecord.customFields) {
-        for (const fieldId in updatedRecord.customFields) {
-          const field = updatedRecord.customFields[fieldId];
+    versions.forEach((version) => {
+      if (version.customFields) {
+        for (const fieldId in version.customFields) {
+          const field = version.customFields[fieldId];
           if (field.type === 'Attachment' && field.value) {
             field.value = {
               fileName: field.value.fileName || field.fileName,
               filePath: field.value.filePath || field.filePath,
               fileSize: field.value.fileSize || field.fileSize,
               fileType: field.value.fileType || field.fileType,
-              fileHash: field.value.fileHash || field.fileHash
+              fileHash: field.value.fileHash || field.fileHash,
             };
           }
         }
       }
+    });
 
-      return updatedRecord;
-    } catch (error) {
-      try {
-        // Attempt to rollback the transaction
-        await transaction.rollback();
-      } catch (rollbackError) {
-        // If rollback fails, it's likely because the transaction was already committed
-        console.error('Rollback failed:', rollbackError);
-      }
-      throw error;
-    }
+    return versions;
   }
 
   static async deleteRecord(id: string, userId: string) {
@@ -1035,23 +994,324 @@ export class RecordService {
     return true;
   }
 
+
+  static async updateRecord(
+    id: string,
+    data: Partial<Record> & { note?: string; comments?: string },
+    userId: string
+  ) {
+    const transaction = await sequelize.transaction();
+  
+    try {
+      // Mövcud recordu tapırıq
+      const record = await Record.findByPk(id);
+      if (!record) {
+        throw new AppError(404, 'Record not found');
+      }
+  
+      // Recordu update edirik
+      await record.update(
+        {
+          ...data,
+          lastModifiedBy: userId,
+        },
+        { transaction }
+      );
+  
+      // Əgər comment varsa, comment əlavə edirik
+      if (data.comments) {
+        await RecordNoteComment.create(
+          {
+            recordId: id,
+            content: data.comments,
+            type: 'comment',
+            createdBy: userId,
+          },
+          { transaction }
+        );
+      }
+  
+      // Transactionu commit edirik
+      await transaction.commit();
+  
+      // Activity log əməliyyatını həyata keçiririk
+      await ActivityService.logActivity({
+        userId,
+        action: ActivityType.UPDATE,
+        resourceType: ResourceType.RECORD,
+        resourceId: id,
+        resourceName: record.title,
+        details: data.note || 'Record updated',
+      });
+  
+      // Kabinetin approverlərinə bildiriş göndəririk
+      const cabinet = await Cabinet.findByPk(record.cabinetId);
+      // if (cabinet && cabinet.approvers && cabinet.approvers.length > 0) {
+      //   await Promise.all(
+      //     cabinet.approvers.map((approver: { userId: string }) =>
+      //       NotificationService.createNotification({
+      //         userId: approver.userId,
+      //         title: 'Record Updated',
+      //         message: `Record "${record.title}" has been updated.`,
+      //         type: 'record_update',
+      //         entityType: 'record',
+      //         entityId: record.id,
+      //       })
+      //     )
+      //   );
+      // }
+
+      if(cabinet){
+        await NotificationService.createNotification({
+          userId: cabinet.createdById,
+          title: 'Record Updated',
+          message: `Record "${record.title}" has been updated.`,
+          type: 'record_update',
+          entityType: 'record',
+          entityId: record.id
+        });
+      }
+  
+      // Yenilənmiş recordu, note və comment-ləri ilə birlikdə əldə edirik
+      const updatedRecord = await Record.findByPk(id, {
+        include: [
+          {
+            model: Cabinet,
+            as: 'cabinet',
+          },
+          {
+            model: User,
+            as: 'creator',
+          },
+          {
+            model: RecordNoteComment,
+            as: 'notes',
+            where: { type: 'note' },
+            required: false,
+            include: [
+              {
+                model: User,
+                as: 'creator',
+                attributes: ['id', 'firstName', 'lastName', 'avatar'],
+              },
+            ],
+            order: [['createdAt', 'DESC']],
+          },
+          {
+            model: RecordNoteComment,
+            as: 'comments',
+            where: { type: 'comment' },
+            required: false,
+            include: [
+              {
+                model: User,
+                as: 'creator',
+                attributes: ['id', 'firstName', 'lastName', 'avatar'],
+              },
+            ],
+            order: [['createdAt', 'DESC']],
+          },
+        ],
+        attributes: {
+          include: [
+            'id',
+            'title',
+            'description',
+            'cabinetId',
+            'creatorId',
+            'filePath',
+            'fileName',
+            'fileSize',
+            'fileType',
+            'fileHash',
+            'version',
+            'status',
+            'metadata',
+            'customFields',
+            'tags',
+            'isTemplate',
+            'isActive',
+            'lastModifiedBy',
+            'createdAt',
+            'updatedAt',
+          ],
+        },
+      });
+  
+      if (!updatedRecord) {
+        throw new AppError(404, 'Updated record not found');
+      }
+  
+      // customFields məlumatının strukturunu təmin edirik (əgər varsa)
+      if (updatedRecord.customFields) {
+        for (const fieldId in updatedRecord.customFields) {
+          const field = updatedRecord.customFields[fieldId];
+          if (field.type === 'Attachment' && field.value) {
+            field.value = {
+              fileName: field.value.fileName || field.fileName,
+              filePath: field.value.filePath || field.filePath,
+              fileSize: field.value.fileSize || field.fileSize,
+              fileType: field.value.fileType || field.fileType,
+              fileHash: field.value.fileHash || field.fileHash,
+            };
+          }
+        }
+      }
+  
+      return updatedRecord;
+    } catch (error) {
+      try {
+        // Əgər error varsa, transactionu rollback edirik
+        await transaction.rollback();
+      } catch (rollbackError) {
+        console.error('Rollback failed:', rollbackError);
+      }
+      throw error;
+    }
+  }
+
+
+  static async modifyRecord(data: ModifyRecordData) {
+    // Əvvəlcə mövcud recordu tapırıq
+    const originalRecord = await Record.findByPk(data.recordId);
+    if (!originalRecord) {
+      throw new AppError(404, 'Record not found');
+    }
+
+    // Kabinet və yaradan istifadəçini yoxlayırıq
+    const cabinet = await Cabinet.findByPk(data.cabinetId);
+    if (!cabinet) {
+      throw new AppError(400, 'Cabinet not found');
+    }
+    const creator = await User.findByPk(data.creatorId);
+    if (!creator) {
+      throw new AppError(400, 'Creator not found');
+    }
+
+    // Custom field-ləri kabinetin konfiqurasiyası ilə yoxlaya bilərik (əvvəlki nümunəyə bənzər)
+    const validatedFields = await RecordService.validateCustomFields(
+      data.customFields,
+      cabinet.customFields
+    );
+
+    // Mövcud record üçün son versiyanı tapırıq
+    const latestVersion = await RecordOtherVersion.findOne({
+      where: { originalRecordId: data.recordId },
+      order: [['version', 'DESC']],
+    });
+    const newVersion = latestVersion ? latestVersion.version + 1 : 2;
+
+    // PDF faylı varsa, onu işləyirik
+    let pdfFileInfo = null;
+    if (data.pdfFile) {
+      try {
+        let pdfData;
+        try {
+          pdfData = await extractPdfContent(data.pdfFile);
+        } catch (pdfError) {
+          console.error('PDF processing error (non-fatal):', pdfError);
+          pdfData = {
+            extractedText: 'PDF text extraction failed',
+            extractedFields: [
+              { name: 'Document Name', value: data.pdfFile.originalname },
+              { name: 'File Size', value: `${Math.round(data.pdfFile.size / 1024)} KB` },
+            ],
+            pageCount: 1,
+          };
+        }
+
+        const timestamp = Date.now();
+        const pdfFileName = `${timestamp}-${data.pdfFile.originalname.replace(/\s+/g, '_')}`;
+        const pdfFilePath = path.join(UPLOAD_DIR, pdfFileName);
+
+        if (!fs.existsSync(UPLOAD_DIR)) {
+          fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+        }
+
+        await writeFileAsync(pdfFilePath, data.pdfFile.buffer);
+        pdfFileInfo = {
+          fileName: data.pdfFile.originalname,
+          filePath: pdfFilePath,
+          fileSize: data.pdfFile.size,
+          fileType: data.pdfFile.mimetype,
+          fileHash: 'N/A', // Əgər lazımdırsa, hash hesablanmalıdır
+          pageCount: pdfData.pageCount,
+        };
+      } catch (err) {
+        console.error('Failed to process PDF file', err);
+      }
+    }
+
+    // Transaction daxilində yeni versiyanı yaradırıq
+    const transaction = await sequelize.transaction();
+    try {
+      const newRecordVersion = await RecordOtherVersion.create(
+        {
+          originalRecordId: data.recordId,
+          title: data.title.trim(),
+          description: originalRecord.description,
+          cabinetId: data.cabinetId,
+          creatorId: data.creatorId,
+          customFields: validatedFields,
+          status: data.status as RecordStatus,
+          tags: data.tags,
+          isTemplate: originalRecord.isTemplate,
+          isActive: originalRecord.isActive,
+          lastModifiedBy: data.creatorId,
+          version: newVersion,
+          ...(pdfFileInfo && {
+            fileName: pdfFileInfo.fileName,
+            filePath: pdfFileInfo.filePath,
+            fileSize: pdfFileInfo.fileSize,
+            fileType: pdfFileInfo.fileType,
+            fileHash: pdfFileInfo.fileHash,
+          }),
+        },
+        { transaction }
+      );
+      await transaction.commit();
+
+      await ActivityService.logActivity({
+        userId : data.creatorId,
+        action: ActivityType.UPDATE,
+        resourceType: ResourceType.RECORD,
+        resourceId: data.recordId,
+        resourceName: data.title,
+        details: 'Record modified',
+      });
+
+      // Notification göndərilir (məsələn, kabinetin yaradan istifadəçiyə)
+      await NotificationService.createNotification({
+        userId: cabinet.createdById,
+        title: 'Record Modified',
+        message: `Record "${data.title}" has been modified. New version: ${newVersion}`,
+        type: 'record_update',
+        entityType: 'record',
+        entityId: data.recordId,
+      });
+
+      // await transaction.commit();
+      return newRecordVersion;
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  }
+  
   static async approveRecord(recordId: string, userId: string, note?: string, data?: Partial<Record>) {
     const transaction = await sequelize.transaction();
-
     try {
       const record = await Record.findByPk(recordId);
       if (!record) {
         throw new AppError(404, 'Record not found');
       }
-
-      // Update record status and any additional data
+      // Redaktə olunmuş məlumatlar daxil olmaqla update edilir
       await record.update({
         ...data,
         status: RecordStatus.APPROVED,
         lastModifiedBy: userId,
       }, { transaction });
-
-      // Add system note for approval
+      
       await RecordNoteComment.create({
         recordId,
         content: note || 'Record approved',
@@ -1059,10 +1319,22 @@ export class RecordService {
         action: 'approve',
         createdBy: userId
       }, { transaction });
-
+      
       await transaction.commit();
-
-      // Fetch updated record with notes and comments
+  
+      // Commitdən sonra Notification və activity log əməliyyatları
+      await ActivityService.logActivity({
+        userId,
+        action: ActivityType.APPROVE,
+        resourceType: ResourceType.RECORD,
+        resourceId: recordId,
+        resourceName: record.title,
+        details: 'Record approved'
+      });
+      if (NotificationService.createRecordApprovalNotification) {
+        await NotificationService.createRecordApprovalNotification(record.creatorId, recordId, record.title);
+      }
+  
       const updatedRecord = await Record.findByPk(recordId, {
         include: [
           {
@@ -1089,98 +1361,86 @@ export class RecordService {
           }
         ]
       });
-
       return updatedRecord;
     } catch (error) {
-      try {
-        // Attempt to rollback the transaction
-        await transaction.rollback();
-      } catch (rollbackError) {
-        // If rollback fails, it's likely because the transaction was already committed
-        console.error('Rollback failed:', rollbackError);
-      }
+      
+        try {
+          await transaction.rollback();
+        } catch (rollbackError) {
+          console.error('Rollback failed:', rollbackError);
+        }
       throw error;
     }
   }
-
-  static async rejectRecord(recordId: string, userId: string, note?: string, comments?: string) {
+  
+  static async rejectRecord(recordId: string, userId: string, note?: string, comments?: string, data?: Partial<Record>) {
     const transaction = await sequelize.transaction();
-
     try {
-      // Get the record and validate it exists
       const record = await Record.findByPk(recordId, {
-        include: [
-          {
-            model: Cabinet,
-            as: 'cabinet'
-          }
-        ],
+        include: [{ model: Cabinet, as: 'cabinet' }],
         transaction
       });
-
       if (!record || !record.cabinet) {
         throw new AppError(404, 'Record or cabinet not found');
       }
-
-      // Get the cabinet with its full data
       const cabinet = await Cabinet.findByPk(record.cabinetId, { transaction });
       if (!cabinet) {
         throw new AppError(404, 'Cabinet not found');
       }
-
-      // Check if the user is an approver
       const isApprover = cabinet.approvers?.some(approver => approver.userId === userId) ?? false;
-      
-      // If not an explicit approver, check if they are a member_full
       if (!isApprover) {
         const cabinetMember = await CabinetMember.findOne({
-          where: {
-            cabinetId: record.cabinetId,
-            userId: userId,
-            role: 'member_full'
-          },
+          where: { cabinetId: record.cabinetId, userId: userId, role: 'member_full' },
           transaction
         });
-
         if (!cabinetMember) {
           throw new AppError(403, 'User is not authorized to reject this record');
         }
       }
-
-      // Check if the record is in a rejectable state
       if (record.status !== RecordStatus.PENDING) {
         throw new AppError(400, 'Only pending records can be rejected');
       }
 
-      // Update record status
+      console.log('Rejecting record data:', data, 'by user:', userId);
+      
       await record.update({
+        ...data,
         status: RecordStatus.REJECTED,
         lastModifiedBy: userId
       }, { transaction });
-
-      // Add note if provided
-      if (note) {
-        await RecordNoteComment.create({
-          recordId: recordId,
-          content: note,
-          type: 'note',
-          action: 'reject',
-          createdBy: userId
-        }, { transaction });
-      }
-
-      // Add comment if provided
+      // if (note) {
+      //   await RecordNoteComment.create({
+      //     recordId,
+      //     content: note,
+      //     type: 'note',
+      //     action: 'reject',
+      //     createdBy: userId
+      //   }, { transaction });
+      // }
       if (comments) {
         await RecordNoteComment.create({
-          recordId: recordId,
+          recordId,
           content: comments,
           type: 'comment',
           action: 'reject',
           createdBy: userId
         }, { transaction });
       }
-
-      // Return updated record with associations
+      await transaction.commit();
+    
+    
+      await ActivityService.logActivity({
+        userId,
+        action: ActivityType.REJECT,
+        resourceType: ResourceType.RECORD,
+        resourceId: recordId,
+        resourceName: record.title,
+        details: note || 'Record rejected'
+      });
+      if (NotificationService.createRecordRejectionNotification) {
+        await NotificationService.createRecordRejectionNotification(record.creatorId, recordId, record.title, note || '');
+      }
+    
       const updatedRecord = await Record.findByPk(recordId, {
         include: [
           {
@@ -1197,13 +1457,11 @@ export class RecordService {
             as: 'notes',
             where: { type: 'note' },
             required: false,
-            include: [
-              {
-                model: User,
-                as: 'creator',
-                attributes: ['id', 'firstName', 'lastName']
-              }
-            ],
+            include: [{
+              model: User,
+              as: 'creator',
+              attributes: ['id', 'firstName', 'lastName']
+            }],
             order: [['createdAt', 'DESC']]
           },
           {
@@ -1211,34 +1469,29 @@ export class RecordService {
             as: 'comments',
             where: { type: 'comment' },
             required: false,
-            include: [
-              {
-                model: User,
-                as: 'creator',
-                attributes: ['id', 'firstName', 'lastName']
-              }
-            ],
+            include: [{
+              model: User,
+              as: 'creator',
+              attributes: ['id', 'firstName', 'lastName']
+            }],
             order: [['createdAt', 'DESC']]
           }
-        ],
-        transaction
+        ]
       });
-
-      // If everything is successful, commit the transaction
-      await transaction.commit();
-      
       return updatedRecord;
     } catch (error) {
-      try {
-        // Attempt to rollback the transaction
-        await transaction.rollback();
-      } catch (rollbackError) {
-        // If rollback fails, it's likely because the transaction was already committed
-        console.error('Rollback failed:', rollbackError);
-      }
+      
+        try {
+          await transaction.rollback();
+        } catch (rollbackError) {
+          console.error('Rollback failed:', rollbackError);
+        }
+      
       throw error;
     }
   }
+  
+  
 
   static async getCabinetRecords(cabinetId: string, page = 1, limit = 10) {
     try {
@@ -1346,10 +1599,10 @@ export class RecordService {
   }
 
   static async getMyRecordsByStatus(status: string | string[], userId: string) {
-    // Get records created by the current user with specific status
+    
     const whereClause: any = {
       status: Array.isArray(status) ? { [Op.in]: status } : status,
-      creatorId: userId // Only get records created by this user
+      creatorId: userId
     };
     
     return Record.findAll({
@@ -1371,8 +1624,8 @@ export class RecordService {
   }
 
   static async getRecordsWaitingForMyApproval(userId: string) {
-    // Find records that are pending and have cabinets where this user is an approver
-    return Record.findAll({
+    console.log('Fetching records waiting for approval for user:', userId);
+    const getRecord = await Record.findAll({
       where: {
         status: RecordStatus.PENDING
       },
@@ -1380,9 +1633,11 @@ export class RecordService {
         {
           model: Cabinet,
           as: 'cabinet',
-          attributes: ['id', 'name', 'description', 'approvers'],
+          attributes: ['id', 'name', 'description', 'approvers','createdById'],
           required: true,
-          where: sequelize.literal(`"cabinet"."approvers" @> '[{"userId": "${userId}"}]'`)
+          where: {
+            createdById: userId,
+          }
         },
         {
           model: User,
@@ -1392,11 +1647,12 @@ export class RecordService {
       ],
       order: [['createdAt', 'DESC']]
     });
+    console.log('Records fetched:', getRecord);
+
+    return getRecord
   }
 
-  /**
-   * Associate multiple files with a record
-   */
+  
   static async associateFilesWithRecord(recordId: string, fileIds: string[]) {
     try {
       // Validate that the record exists

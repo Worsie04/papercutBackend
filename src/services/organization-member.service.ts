@@ -177,7 +177,7 @@ export class OrganizationMemberService {
       status?: 'active' | 'suspended';
     }
   ) {
-    console.log(userId)
+    //console.log(userId)
     const member = await OrganizationMember.findOne({
       where: {
         organizationId,

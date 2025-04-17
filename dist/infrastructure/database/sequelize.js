@@ -44,7 +44,7 @@ exports.sequelize = new sequelize_1.Sequelize({
     database: config_1.config.database.name,
     username: config_1.config.database.user,
     password: config_1.config.database.password,
-    logging: config_1.config.nodeEnv === 'development' ? console.log : false,
+    logging: false, // Disable SQL query logging
     define: {
         timestamps: true,
         underscored: true,
@@ -68,11 +68,9 @@ const initializeDatabase = async () => {
         // Import and setup associations after models are initialized
         const { setupAssociations } = await Promise.resolve().then(() => __importStar(require('../../models/associations')));
         await setupAssociations();
-        // Sync models with database (in development only)
-        if (config_1.config.nodeEnv === 'production') {
-            await exports.sequelize.sync({ alter: true });
-            console.log('Database models synchronized successfully.');
-        }
+        // Never sync models automatically - use migrations instead
+        console.log('Database connection verified successfully.');
+        console.log('IMPORTANT: Database schema changes must be done through migrations only.');
         return models;
     }
     catch (error) {

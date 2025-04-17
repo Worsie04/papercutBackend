@@ -26,6 +26,18 @@ class UserController {
             next(error);
         }
     }
+    static async getSuperUsers(req, res, next) {
+        try {
+            // Get the current user's ID from the authenticated request
+            const authenticatedReq = req;
+            const userId = authenticatedReq.user.id;
+            const superUsers = await user_service_1.UserService.getSuperUsers(userId);
+            res.json(superUsers);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
     static async getUser(req, res, next) {
         try {
             const { id } = req.params;
@@ -48,6 +60,7 @@ class UserController {
     static async updateUser(req, res, next) {
         try {
             const { id } = req.params;
+            console.log('Update user request body:', req.body);
             const user = await user_service_1.UserService.updateUser(id, req.body);
             res.json(user);
         }
@@ -102,6 +115,17 @@ class UserController {
             const userId = req.user.id;
             const user = await user_service_1.UserService.getUser(userId);
             res.json(user);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async getUserWithRelatedData(req, res, next) {
+        try {
+            const userId = req.user.id;
+            const includeParams = req.query.include ? req.query.include.split(',') : [];
+            const result = await user_service_1.UserService.getUserWithRelatedData(userId, includeParams);
+            res.json(result);
         }
         catch (error) {
             next(error);

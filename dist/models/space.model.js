@@ -56,6 +56,10 @@ Space.init(Object.assign(Object.assign({}, base_model_1.baseModelConfig), { name
         allowNull: false,
         defaultValue: false,
         field: 'require_approval',
+    }, approvers: {
+        type: sequelize_1.DataTypes.JSONB,
+        allowNull: true,
+        defaultValue: [],
     }, settings: {
         type: sequelize_1.DataTypes.JSONB,
         allowNull: false,
@@ -86,6 +90,14 @@ Space.init(Object.assign(Object.assign({}, base_model_1.baseModelConfig), { name
         type: sequelize_1.DataTypes.TEXT,
         allowNull: true,
         field: 'rejection_reason',
+    }, rejectedBy: {
+        type: sequelize_1.DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: 'users',
+            key: 'id',
+        },
+        field: 'rejected_by',
     } }), {
     sequelize: sequelize_2.sequelize,
     modelName: 'Space',

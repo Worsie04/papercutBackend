@@ -97,22 +97,22 @@ class AuthService {
         };
     }
     static async loginAdmin(email, password) {
-        console.log('AuthService.loginAdmin called with email:', email);
+        //console.log('AuthService.loginAdmin called with email:', email);
         const admin = await admin_model_1.Admin.findOne({ where: { email } });
-        console.log('Admin found:', admin ? 'yes' : 'no');
+        //console.log('Admin found:', admin ? 'yes' : 'no');
         if (!admin) {
-            console.log('Admin not found for email:', email);
+            //console.log('Admin not found for email:', email);
             throw new errorHandler_1.AppError(401, 'Invalid credentials');
         }
-        console.log('Comparing passwords...');
+        //console.log('Comparing passwords...');
         const isPasswordValid = await admin.comparePassword(password);
-        console.log('Password valid:', isPasswordValid);
+        //console.log('Password valid:', isPasswordValid);
         if (!isPasswordValid) {
-            console.log('Invalid password for admin:', email);
+            //console.log('Invalid password for admin:', email);
             throw new errorHandler_1.AppError(401, 'Invalid credentials');
         }
         if (!admin.isActive) {
-            console.log('Admin account is not active:', email);
+            //console.log('Admin account is not active:', email);
             throw new errorHandler_1.AppError(403, 'Account is deactivated');
         }
         // Update last login
@@ -124,7 +124,7 @@ class AuthService {
             type: 'admin',
             role: admin.role,
         };
-        console.log('Generating tokens for admin:', email);
+        //console.log('Generating tokens for admin:', email);
         return {
             accessToken: jwt_util_1.JwtUtil.generateToken(payload),
             refreshToken: jwt_util_1.JwtUtil.generateRefreshToken(admin.id, 'admin'),
@@ -161,8 +161,6 @@ class AuthService {
                 throw new errorHandler_1.AppError(404, 'User not found');
             }
         }
-        // Here you could implement token blacklisting if needed
-        // For now, we'll just update the last login time
         if ('lastLoginAt' in user) {
             user.lastLoginAt = new Date();
             await user.save();

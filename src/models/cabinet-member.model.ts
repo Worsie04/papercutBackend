@@ -1,33 +1,15 @@
 import { Model, DataTypes } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
-import { Cabinet } from './cabinet.model';
-import { User } from './user.model';
-import { CabinetMemberPermission } from './cabinet-member-permission.model';
-
-export interface CabinetMemberPermissions {
-  readRecords: boolean;
-  createRecords: boolean;
-  updateRecords: boolean;
-  deleteRecords: boolean;
-  manageCabinet: boolean;
-  downloadFiles: boolean;
-  exportTables: boolean;
-}
 
 export class CabinetMember extends Model {
   public id!: string;
   public cabinetId!: string;
   public userId!: string;
-  public role!: 'owner' | 'member' | 'viewer';
-  public permissions!: CabinetMemberPermissions;
-  public createdAt!: Date;
-  public updatedAt!: Date;
-  public deletedAt?: Date;
-
-  // Associations
-  public cabinet?: Cabinet;
-  public user?: User;
-  public memberPermissions?: CabinetMemberPermission;
+  public role!: string;
+  public permissions!: object;
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
+  public readonly deletedAt!: Date | null;
 }
 
 CabinetMember.init(
@@ -56,9 +38,9 @@ CabinetMember.init(
       },
     },
     role: {
-      type: DataTypes.ENUM('owner', 'member', 'viewer'),
+      type: DataTypes.ENUM('member_full', 'member_read', 'member_write', 'admin'),
+      defaultValue: 'member_full',
       allowNull: false,
-      defaultValue: 'member',
     },
     permissions: {
       type: DataTypes.JSONB,
@@ -70,7 +52,7 @@ CabinetMember.init(
         deleteRecords: false,
         manageCabinet: false,
         downloadFiles: true,
-        exportTables: false
+        exportTables: false,
       },
     },
     createdAt: {
@@ -91,42 +73,9 @@ CabinetMember.init(
   },
   {
     sequelize,
-    modelName: 'CabinetMember',
     tableName: 'cabinet_members',
-    underscored: true,
     paranoid: true,
   }
 );
 
-// Set up associations
-CabinetMember.belongsTo(Cabinet, {
-  foreignKey: 'cabinetId',
-  as: 'cabinet',
-});
-
-CabinetMember.belongsTo(User, {
-  foreignKey: 'userId',
-  as: 'user',
-});
-
-Cabinet.belongsToMany(User, {
-  through: CabinetMember,
-  foreignKey: 'cabinetId',
-  otherKey: 'userId',
-  as: 'users',
-});
-
-User.belongsToMany(Cabinet, {
-  through: CabinetMember,
-  foreignKey: 'userId',
-  otherKey: 'cabinetId',
-  as: 'cabinets',
-});
-
-// Change the association name from 'permissions' to 'memberPermissions'
-CabinetMember.hasOne(CabinetMemberPermission, {
-  foreignKey: 'cabinetId',
-  sourceKey: 'cabinetId',
-  as: 'memberPermissions',
-  constraints: false
-}); 
+export default CabinetMember; 

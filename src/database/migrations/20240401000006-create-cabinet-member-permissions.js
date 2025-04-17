@@ -29,6 +29,16 @@ module.exports = {
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE'
       },
+      cabinet_member_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'cabinet_members',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
       role: {
         type: Sequelize.ENUM('member_full', 'member_read', 'member_write', 'admin'),
         defaultValue: 'member_full',
@@ -65,10 +75,15 @@ module.exports = {
 
     // Add unique constraint to prevent duplicate user-cabinet combinations
     await queryInterface.addConstraint('cabinet_member_permissions', {
-      fields: ['user_id', 'cabinet_id'],
+      fields: ['user_id', 'cabinet_id', 'cabinet_member_id'],
       type: 'unique',
-      name: 'unique_user_cabinet_permission'
+      name: 'unique_user_cabinet_member_permission'
     });
+
+    // Add indexes for foreign keys
+    await queryInterface.addIndex('cabinet_member_permissions', ['user_id']);
+    await queryInterface.addIndex('cabinet_member_permissions', ['cabinet_id']);
+    await queryInterface.addIndex('cabinet_member_permissions', ['cabinet_member_id']);
   },
 
   async down(queryInterface, Sequelize) {

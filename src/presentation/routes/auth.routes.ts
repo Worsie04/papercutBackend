@@ -19,6 +19,7 @@ import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
+
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 10000, // 15 minutes

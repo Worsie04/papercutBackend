@@ -3,6 +3,21 @@ import File from '../models/file.model';
 import RecordFile from '../models/record-file.model';
 import { Record } from '../models/record.model';
 import { uploadFileToR2 } from '../utils/r2.util';
+import { UploadService } from './upload.service';
+import path from 'path';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { AppError } from '../presentation/middlewares/errorHandler'; 
+
+const s3Client = new S3Client({
+  region: 'auto', // R2 üçün adətən 'auto'
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  },
+});
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || '';
+// --------------------------------
 
 export class FileService {
   /**
@@ -10,9 +25,17 @@ export class FileService {
    */
   async saveFile(file: any, userId: string): Promise<any> {
     try {
-      // Generate a unique filename while preserving the original extension
-      const fileExtension = file.originalname.split('.').pop();
-      const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+      const originalName = file.originalname;
+
+      const fileExtension = path.extname(originalName);
+      const baseName = path.basename(originalName, fileExtension);
+      const shortId = uuidv4().slice(0, 3);
+      const uniqueFilename = `${baseName}-${shortId}${fileExtension}`;
+      
+
+
+      //const fileExtension = file.originalname.split('.').pop();
+      //const uniqueFilename = `${file.originalname}.${uuidv4()}.${fileExtension}`;
       const folder = 'uploads'; // You can organize files in folders
 
       // Upload to Cloudflare R2
@@ -56,27 +79,58 @@ export class FileService {
     }
   }
 
-  /**
-   * Get all unallocated files for a user
-   */
+
   async getUnallocatedFiles(userId: string): Promise<any[]> {
     try {
-      return await File.findAll({
+      const filesFromDb = await File.findAll({
         where: {
           userId,
           isAllocated: false
         },
-        order: [['createdAt', 'DESC']]
+        // `path`-ı da seçdiyinizə əmin olun
+        attributes: ['id', 'name', 'path', 'size', 'userId', 'isAllocated', 'createdAt', 'updatedAt'],
+        order: [['createdAt', 'DESC']],
+        raw: true // Nəticələri sadə obyektlər kimi almaq üçün (Sequelize istifadə edirsinizsə)
       });
+  
+      if (!filesFromDb || filesFromDb.length === 0) {
+          return [];
+      }
+  
+      // Hər bir fayl üçün imzalanmış URL almaq üçün Promises massivi yaradırıq
+      const filesWithUrlsPromises = filesFromDb.map(async (file) => {
+        if (file.path) { // path varsa URL yaratmağa çalışırıq
+          try {
+            // getFileViewUrl funksiyasını çağırırıq (statik və ya instance üzərindən)
+            const signedUrl = await UploadService.getFileViewUrl(file.path);
+            // Orijinal fayl obyektinə 'url' xüsusiyyətini əlavə edirik
+            return {
+              ...file, // Faylın digər bütün xüsusiyyətləri
+              url: signedUrl // Əlavə edilmiş imzalanmış URL
+            };
+          } catch (urlError) {
+              console.error(`Error generating URL for path ${file.path}:`, urlError);
+              // URL yaradıla bilmədisə, url-i null olaraq təyin edirik və ya səhvi başqa cür idarə edirik
+              return { ...file, url: null };
+          }
+        } else {
+           // Path yoxdursa, url null olacaq
+           return { ...file, url: null };
+        }
+      });
+  
+      // Bütün URL generasiya proseslərinin bitməsini gözləyirik
+      const filesWithUrls = await Promise.all(filesWithUrlsPromises);
+  
+      return filesWithUrls; // URL-ləri əlavə edilmiş fayl siyahısını qaytarırıq
+  
     } catch (error) {
-      console.error('Error getting unallocated files:', error);
-      throw error;
+      console.error('Error getting unallocated files with URLs:', error);
+      throw error; // Və ya daha spesifik səhv idarəetməsi
     }
   }
 
-  /**
-   * Mark files as unallocated (when saved without creating a record)
-   */
+
   async markAsUnallocated(fileIds: string[], userId: string): Promise<boolean> {
     try {
       await File.update(
@@ -96,9 +150,6 @@ export class FileService {
     }
   }
 
-  /**
-   * Associate files with a record
-   */
   async associateFilesWithRecord(fileIds: string[], recordId: string): Promise<any> {
     try {
       // Create entries in the join table
@@ -127,9 +178,7 @@ export class FileService {
     }
   }
 
-  /**
-   * Extract text and fields from a PDF file using OCR/text extraction
-   */
+
   async extractFields(fileId: string, userId: string): Promise<any> {
     try {
       // Get the file
@@ -161,9 +210,7 @@ export class FileService {
     }
   }
 
-  /**
-   * Get file by ID
-   */
+
   async getFileById(fileId: string, userId: string): Promise<any> {
     try {
       return await File.findOne({
@@ -175,9 +222,6 @@ export class FileService {
     }
   }
 
-  /**
-   * Delete file by ID
-   */
   async deleteFile(fileId: string, userId: string): Promise<boolean> {
     try {
       const file = await File.findOne({
@@ -197,6 +241,90 @@ export class FileService {
       throw error;
     }
   }
+
+
+
+// --- NEW STATIC METHOD: Get file content as Buffer from R2 ---
+static async getFileBuffer(r2Key: string): Promise<Buffer> {
+  console.log(`FileService: Attempting to download file buffer for key: ${r2Key}`);
+  if (!R2_BUCKET_NAME) {
+      throw new AppError(500, 'R2_BUCKET_NAME is not configured.');
+  }
+  const command = new GetObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: r2Key,
+  });
+
+  try {
+    const { Body } = await s3Client.send(command);
+    if (!Body) {
+        throw new AppError(404, `File not found or empty body in R2 for key: ${r2Key}`);
+    }
+    // Body is a ReadableStream | Readable | Blob | Uint8Array
+    // Convert stream to buffer
+    const chunks: Buffer[] = [];
+    // Assuming Body is a ReadableStream (Node.js environment)
+    // Adjust if using different environment (e.g., browser ReadableStream)
+    if (typeof (Body as any).on === 'function') { // Check if it behaves like a Node stream
+       const stream = Body as NodeJS.ReadableStream;
+       for await (const chunk of stream) {
+           chunks.push(Buffer.from(chunk));
+       }
+       const buffer = Buffer.concat(chunks);
+       console.log(`FileService: Successfully downloaded buffer (${buffer.length} bytes) for key: ${r2Key}`);
+       return buffer;
+    } else if (Body instanceof Uint8Array) {
+        const buffer = Buffer.from(Body);
+        console.log(`FileService: Successfully obtained buffer directly (${buffer.length} bytes) for key: ${r2Key}`);
+        return buffer;
+    } else {
+        // Handle other Body types if necessary (e.g., Blob in browser)
+         throw new AppError(500, `Unsupported R2 response body type for key: ${r2Key}`);
+    }
+
+  } catch (error: any) {
+    console.error(`FileService: Error downloading file from R2 (key: ${r2Key}):`, error);
+    // Check for specific S3 errors like NoSuchKey
+    if (error.name === 'NoSuchKey') {
+        throw new AppError(404, `File not found in R2 for key: ${r2Key}`);
+    }
+    throw new AppError(500, `Could not download file from R2: ${error.message}`);
+  }
+}
+
+// --- NEW STATIC METHOD: Upload a Buffer to R2 ---
+static async uploadBuffer(buffer: Buffer, r2Key: string, mimetype: string): Promise<{ success: boolean, key: string, url?: string }> {
+  console.log(`FileService: Attempting to upload buffer (${buffer.length} bytes) to key: ${r2Key} with type: ${mimetype}`);
+  if (!R2_BUCKET_NAME) {
+    throw new AppError(500, 'R2_BUCKET_NAME is not configured.');
+  }
+  const command = new PutObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: r2Key,
+    Body: buffer,
+    ContentType: mimetype,
+    // ACL: 'public-read', // IMPORTANT: Set ACL if needed for public access, BUT R2 recommends using Bucket Policies or Signed URLs instead
+  });
+
+  try {
+    await s3Client.send(command);
+    console.log(`FileService: Successfully uploaded buffer to R2 key: ${r2Key}`);
+    // Optionally generate a public or signed URL to return
+    // For simplicity, returning success and the key for now
+    // const url = await UploadService.getFileViewUrl(r2Key); // Generate signed URL if needed
+    // Construct public URL if bucket is public and using R2_PUB_URL convention
+    const publicUrl = process.env.R2_PUB_URL ? `https://${process.env.R2_PUB_URL}/${r2Key}` : undefined;
+
+    return { success: true, key: r2Key, url: publicUrl }; // Return key and potentially public URL
+  } catch (error: any) {
+    console.error(`FileService: Error uploading buffer to R2 (key: ${r2Key}):`, error);
+    throw new AppError(500, `Could not upload buffer to R2: ${error.message}`);
+  }
+}
+
+
+
+
 }
 
 export default new FileService();

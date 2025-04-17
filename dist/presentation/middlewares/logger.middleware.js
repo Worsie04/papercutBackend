@@ -8,7 +8,7 @@ const winston_1 = __importDefault(require("winston"));
 const config_1 = require("../../config");
 // Create Winston logger
 const logger = winston_1.default.createLogger({
-    level: config_1.config.nodeEnv === 'development' ? 'debug' : 'info',
+    level: config_1.config.nodeEnv === 'development' ? 'info' : 'info',
     format: winston_1.default.format.combine(winston_1.default.format.timestamp(), winston_1.default.format.json()),
     transports: [
         // Write all logs to console
@@ -33,6 +33,11 @@ const logger = winston_1.default.createLogger({
 exports.logger = logger;
 // Request logging middleware
 const requestLogger = (req, res, next) => {
+    // In development mode, only log errors and important events
+    if (config_1.config.nodeEnv === 'development') {
+        // Skip logging for regular requests in development
+        return next();
+    }
     const start = Date.now();
     // Log request
     logger.info({

@@ -91,14 +91,3 @@ SpaceReassignment.init(
     timestamps: true,
   }
 );
-
-// Set up associations directly
-SpaceReassignment.belongsTo(Space, { foreignKey: 'spaceId', as: 'space' });
-SpaceReassignment.belongsTo(User, { foreignKey: 'fromUserId', as: 'fromUser' });
-SpaceReassignment.belongsTo(User, { foreignKey: 'toUserId', as: 'toUser' });
-
-// Keep this function for backward compatibility
-export const setupSpaceReassignmentAssociations = () => {
-  // Associations are now set up directly when this module is imported
-  console.log('SpaceReassignment associations already set up');
-};

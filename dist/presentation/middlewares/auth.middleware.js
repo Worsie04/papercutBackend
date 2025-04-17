@@ -5,47 +5,43 @@ const jwt_util_1 = require("../../utils/jwt.util");
 const errorHandler_1 = require("./errorHandler");
 const admin_model_1 = require("../../models/admin.model");
 const user_model_1 = require("../../models/user.model");
+// In auth.middleware.ts
 const authenticate = (type) => {
     return async (req, res, next) => {
-        var _a, _b;
         try {
-            // Check for token in cookies or Authorization header
-            const token = ((_a = req.cookies) === null || _a === void 0 ? void 0 : _a.access_token_w) || ((_b = req.headers.authorization) === null || _b === void 0 ? void 0 : _b.split(' ')[1]);
-            //console.log('Cookie token:', req.cookies?.access_token_w);
-            //console.log('Auth header:', req.headers.authorization);
+            let token;
+            // Check Authorization header
+            const authHeader = req.headers.authorization;
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                token = authHeader.substring(7);
+            }
+            // Fallback to cookie if no valid Authorization header
+            // if (!token) {
+            //   token = req.cookies?.access_token_w;
+            // }
             if (!token) {
                 throw new errorHandler_1.AppError(401, 'No token provided');
             }
-            //console.log('Using token:', token);
-            const decoded = jwt_util_1.JwtUtil.verifyToken(token);
-            
-            if (type) {
-                if (Array.isArray(type)) {
-                    // Check if user type or role matches any of the allowed types
-                    const hasValidType = type.some(t => decoded.type === t || decoded.role === t);
-                    console.log('hasValidType:', hasValidType);
-                    if (!hasValidType) {
-                        throw new errorHandler_1.AppError(403, 'Unauthorized access');
-                    }
-                }
-                else {
-                    // Single type check
-                    if (decoded.type !== type && decoded.role !== type) {
-                        throw new errorHandler_1.AppError(403, 'Unauthorized access');
-                    }
-                }
+            // Validate token format before verification
+            if (typeof token !== 'string' || token.trim() === '') {
+                throw new errorHandler_1.AppError(401, 'Invalid token format');
             }
-            req.user = decoded;
-            next();
+            try {
+                const decoded = await jwt_util_1.JwtUtil.verifyToken(token.trim());
+                req.user = {
+                    id: decoded.id,
+                    email: decoded.email,
+                    type: decoded.type,
+                    role: decoded.role
+                };
+                next();
+            }
+            catch (error) {
+                throw new errorHandler_1.AppError(401, 'Invalid or expired token');
+            }
         }
         catch (error) {
-            console.error('Auth error:', error);
-            if (error instanceof errorHandler_1.AppError) {
-                next(error);
-            }
-            else {
-                next(new errorHandler_1.AppError(401, 'Invalid token'));
-            }
+            next(error);
         }
     };
 };
@@ -53,13 +49,14 @@ exports.authenticate = authenticate;
 const requireAdmin = (roles) => {
     return async (req, res, next) => {
         try {
-            if (!req.user || req.user.type !== 'admin') {
+            console.log('Checking admin access...', req.user);
+            if (!req.user || (req.user.type !== 'admin' && req.user.role !== 'super_admin')) {
                 throw new errorHandler_1.AppError(403, 'Admin access required');
             }
             if (roles && roles.length > 0) {
                 const admin = await admin_model_1.Admin.findByPk(req.user.id);
                 if (!admin || !roles.includes(admin.role)) {
-                    throw new errorHandler_1.AppError(403, 'Insufficient permissions');
+                    throw new errorHandler_1.AppError(403, 'You do not have the required permissions for this action');
                 }
             }
             next();
@@ -78,13 +75,13 @@ const requireVerifiedEmail = async (req, res, next) => {
         if (req.user.type === 'admin') {
             const admin = await admin_model_1.Admin.findByPk(req.user.id);
             if (!admin || !admin.emailVerifiedAt) {
-                throw new errorHandler_1.AppError(403, 'Email verification required');
+                throw new errorHandler_1.AppError(403, 'Please verify your email address before continuing');
             }
         }
         else {
             const user = await user_model_1.User.findByPk(req.user.id);
             if (!user || !user.emailVerifiedAt) {
-                throw new errorHandler_1.AppError(403, 'Email verification required');
+                throw new errorHandler_1.AppError(403, 'Please verify your email address before continuing');
             }
         }
         next();
@@ -102,13 +99,13 @@ const requireActive = async (req, res, next) => {
         if (req.user.type === 'admin') {
             const admin = await admin_model_1.Admin.findByPk(req.user.id);
             if (!admin || !admin.isActive) {
-                throw new errorHandler_1.AppError(403, 'Account is deactivated');
+                throw new errorHandler_1.AppError(403, 'Your account has been deactivated. Please contact support.');
             }
         }
         else {
             const user = await user_model_1.User.findByPk(req.user.id);
             if (!user || !user.isActive) {
-                throw new errorHandler_1.AppError(403, 'Account is deactivated');
+                throw new errorHandler_1.AppError(403, 'Your account has been deactivated. Please contact support.');
             }
         }
         next();
@@ -122,16 +119,28 @@ const requireAuth = async (req, res, next) => {
     var _a;
     try {
         // Check for token in cookies or Authorization header
-        const token = req.cookies.access_token_w || ((_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.split(' ')[1]);
+        //const token = req.cookies.access_token_w || req.headers.authorization?.split(' ')[1];
+        const token = (_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.split(' ')[1];
         if (!token) {
-            throw new errorHandler_1.AppError(401, 'Unauthorized');
+            throw new errorHandler_1.AppError(401, 'Authentication required. Please login.');
         }
-        const decoded = await jwt_util_1.JwtUtil.verifyToken(token);
-        req.user = decoded;
-        next();
+        try {
+            const decoded = await jwt_util_1.JwtUtil.verifyToken(token);
+            req.user = decoded;
+            next();
+        }
+        catch (error) {
+            // Handle specific JWT errors
+            if (error.name === 'TokenExpiredError') {
+                throw new errorHandler_1.AppError(401, 'Your session has expired. Please login again.');
+            }
+            else {
+                throw new errorHandler_1.AppError(401, 'Invalid authentication token. Please login again.');
+            }
+        }
     }
     catch (error) {
-        next(new errorHandler_1.AppError(401, 'Unauthorized'));
+        next(error);
     }
 };
 exports.requireAuth = requireAuth;

@@ -3,7 +3,6 @@ import { config } from './config';
 
 const startServer = async () => {
   try {
-    // Initialize the app (including database)
     await initializeApp();
 
     // Start server
