@@ -18,7 +18,8 @@ export enum ResourceType {
   SPACE = 'SPACE',
   CABINET = 'CABINET',
   RECORD = 'RECORD',
-  FILE = 'FILE'
+  FILE = 'FILE',
+  LETTER = 'LETTER',
 }
 
 export enum ActivityStatus {

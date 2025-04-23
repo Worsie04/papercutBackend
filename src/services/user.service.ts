@@ -28,6 +28,12 @@ interface GetUsersResponse {
   totalPages: number;
 }
 
+interface UserSelectOption {
+  value: string;
+  label: string;
+}
+
+
 export class UserService {
   static async getUsers({
     page,
@@ -62,15 +68,56 @@ export class UserService {
       raw: false
     });
 
-    // Transform the users to plain objects
-    // const users = rows.map(user => user.get({ plain: true }));
-
     return {
       users: rows,
       total: count,
       page,
       totalPages: Math.ceil(count / limit),
     };
+  }
+
+
+  static async getReviewers({
+    sortBy = 'firstName',
+    sortOrder = 'asc',
+  }: Partial<GetUsersParams>): Promise<UserSelectOption[]> {
+
+    const reviewers = await User.findAll({
+        where: {
+            position: 'reviewer',
+            isActive: true
+        },
+        order: [[sortBy, sortOrder]],
+        attributes: ['id', 'firstName', 'lastName'],
+        raw: true
+    });
+
+    return reviewers.map(user => ({
+        value: user.id,
+        label: `${user.firstName} ${user.lastName}`.trim()
+    }));
+  }
+
+
+  static async getApprovers({
+    sortBy = 'firstName',
+    sortOrder = 'asc',
+  }: Partial<GetUsersParams>): Promise<UserSelectOption[]> {
+
+    const approvers = await User.findAll({
+        where: {
+            position: 'approver',
+            isActive: true
+        },
+        order: [[sortBy, sortOrder]],
+        attributes: ['id', 'firstName', 'lastName'],
+        raw: true
+    });
+
+    return approvers.map(user => ({
+        value: user.id,
+        label: `${user.firstName} ${user.lastName}`.trim()
+    }));
   }
 
   static async getSuperUsers(userId: string): Promise<User[]> {

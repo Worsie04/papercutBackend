@@ -17,6 +17,8 @@ router.put('/me/password', authenticate(), validate(updatePasswordSchema), UserC
 
 // List users for frontend
 router.get('/list', authenticate(), UserController.getUsers);
+router.get('/reviewers', authenticate(), UserController.getReviewers);  
+router.get('/approvers', authenticate(), UserController.getApprovers);  
 router.get('/superusers', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getSuperUsers);
 
 // Admin routes (require admin role)

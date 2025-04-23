@@ -54,6 +54,24 @@ export class UserController {
     }
   }
 
+  static async getReviewers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await UserService.getReviewers({});
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getApprovers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await UserService.getApprovers({});
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   static async getSuperUsers(req: Request, res: Response, next: NextFunction) {
     try {
       // Get the current user's ID from the authenticated request

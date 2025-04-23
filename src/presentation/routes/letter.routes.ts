@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { LetterController } from '../controllers/letter.controller';
 import { authenticate } from '../middlewares/auth.middleware';
-import { LetterCommentController } from '../controllers/letterComment.controller';
 
 const router = Router();
 
 router.use(authenticate(['user', 'admin', 'super_admin', 'super_user']));
 router.get('/pending-review', LetterController.getPendingReviewLetters);
+router.get('/pending-my-action', LetterController.getLettersPendingMyAction);
+router.get('/my-rejected', LetterController.getMyRejectedLetters);
+
 
 router.post('/', LetterController.create);
 router.get('/', LetterController.getAllByUserId);
@@ -18,10 +20,8 @@ router.delete('/:id', LetterController.delete);
 router.post('/from-pdf-interactive', LetterController.createFromPdfInteractive);
 router.post('/:id/approve-review', LetterController.approveLetterReview);
 router.post('/:id/reject-review', LetterController.rejectLetterReview);
+router.post('/:id/resubmit', LetterController.resubmitRejectedLetter);
+router.post('/:id/final-approve', LetterController.finalApproveLetter);
 
-// --- NEW Comment Routes ---
-router.post('/:id/comments', LetterCommentController.addComment); // Add a comment
-router.get('/:id/comments', LetterCommentController.getLetterComments); // Get comments for a letter
-// -
 
 export default router;

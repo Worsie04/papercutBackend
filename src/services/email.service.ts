@@ -187,6 +187,47 @@ export class EmailService {
     }
   }
 
+  static async sendLetterApprovedEmail(
+    toEmail: string,              // Email of the original submitter
+    submitterName: string,        // Name of the submitter
+    letterName: string,           // Name/description of the letter
+    approverFullName: string,     // Name of the person who gave final approval
+    letterViewUrl: string         // Direct link for the submitter to view the approved letter
+): Promise<void> {
+    const emailSubject = `Letter Approved: ${letterName}`;
+    const html = `
+      <div style="font-family: sans-serif; line-height: 1.6;">
+        <h2>Letter Approved</h2>
+        <p>Hello ${submitterName || 'User'},</p>
+        <p>Your letter "<b>${letterName}</b>" has been finally approved by <b>${approverFullName}</b>.</p>
+        <p>You can view the approved letter by clicking the button below:</p>
+        <p style="margin: 20px 0;">
+          <a href="${letterViewUrl}" style="
+            display: inline-block;
+            padding: 12px 25px;
+            background-color: #52c41a; /* Ant Design Success Green */
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+          ">View Approved Letter</a>
+        </p>
+        <p>Best regards,<br>The Worsie Team</p>
+      </div>
+    `;
+
+    try {
+        await this.sendEmail({
+          to: toEmail,
+          subject: emailSubject,
+          html,
+        });
+        console.log(`Letter approved email successfully sent to ${toEmail} for letter "${letterName}"`);
+    } catch (error) {
+        console.error(`Error sending letter approved email to ${toEmail}:`, error);
+    }
+  }
+
 
 
 } 

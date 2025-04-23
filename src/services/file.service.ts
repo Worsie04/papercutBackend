@@ -309,10 +309,6 @@ static async uploadBuffer(buffer: Buffer, r2Key: string, mimetype: string): Prom
   try {
     await s3Client.send(command);
     console.log(`FileService: Successfully uploaded buffer to R2 key: ${r2Key}`);
-    // Optionally generate a public or signed URL to return
-    // For simplicity, returning success and the key for now
-    // const url = await UploadService.getFileViewUrl(r2Key); // Generate signed URL if needed
-    // Construct public URL if bucket is public and using R2_PUB_URL convention
     const publicUrl = process.env.R2_PUB_URL ? `https://${process.env.R2_PUB_URL}/${r2Key}` : undefined;
 
     return { success: true, key: r2Key, url: publicUrl }; // Return key and potentially public URL

@@ -17,8 +17,11 @@ import referenceRoutes from './reference.routes';
 import templateRoutes from './template.routes';
 import letterRoutes from './letter.routes';
 import uploadRoutes from './upload.routes';
+import publicLetterRoutes from './publicLetter.routes';
 
 const router = Router();
+
+router.use('/public/letters', publicLetterRoutes);
 
 // API version prefix
 const API_VERSION = '/api/v1';
@@ -42,6 +45,7 @@ router.use(`${API_VERSION}/references`, referenceRoutes);
 router.use(`${API_VERSION}/templates`, templateRoutes);
 router.use(`${API_VERSION}/letters`, letterRoutes);
 router.use(`${API_VERSION}/uploads`, uploadRoutes);
+
 
 // Health check endpoint
 router.get(`${API_VERSION}/health`, (req, res) => {
