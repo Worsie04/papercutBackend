@@ -22,7 +22,9 @@ const reference_routes_1 = __importDefault(require("./reference.routes"));
 const template_routes_1 = __importDefault(require("./template.routes"));
 const letter_routes_1 = __importDefault(require("./letter.routes"));
 const upload_routes_1 = __importDefault(require("./upload.routes"));
+const publicLetter_routes_1 = __importDefault(require("./publicLetter.routes"));
 const router = (0, express_1.Router)();
+router.use('/public/letters', publicLetter_routes_1.default);
 // API version prefix
 const API_VERSION = '/api/v1';
 // Mount routes

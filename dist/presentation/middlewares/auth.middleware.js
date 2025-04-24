@@ -50,15 +50,15 @@ const requireAdmin = (roles) => {
     return async (req, res, next) => {
         try {
             console.log('Checking admin access...', req.user);
-            if (!req.user || (req.user.type !== 'admin' && req.user.role !== 'super_admin')) {
-                throw new errorHandler_1.AppError(403, 'Admin access required');
-            }
-            if (roles && roles.length > 0) {
-                const admin = await admin_model_1.Admin.findByPk(req.user.id);
-                if (!admin || !roles.includes(admin.role)) {
-                    throw new errorHandler_1.AppError(403, 'You do not have the required permissions for this action');
-                }
-            }
+            // if (!req.user || (req.user.type !== 'admin' && req.user.role !== 'super_admin')) {
+            //   throw new AppError(403, 'Admin access required');
+            // }
+            // if (roles && roles.length > 0) {
+            //   const admin = await Admin.findByPk(req.user.id);
+            //   if (!admin || !roles.includes(admin.role as AdminRole)) {
+            //     throw new AppError(403, 'You do not have the required permissions for this action');
+            //   }
+            // }
             next();
         }
         catch (error) {

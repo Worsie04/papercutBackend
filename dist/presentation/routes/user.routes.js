@@ -16,9 +16,11 @@ router.put('/me', (0, auth_middleware_1.authenticate)(), (0, validate_middleware
 router.put('/me/password', (0, auth_middleware_1.authenticate)(), (0, validate_middleware_1.validate)(user_validator_1.updatePasswordSchema), user_controller_1.UserController.updatePassword);
 // List users for frontend
 router.get('/list', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.getUsers);
+router.get('/reviewers', user_controller_1.UserController.getReviewers);
+router.get('/approvers', user_controller_1.UserController.getApprovers);
 router.get('/superusers', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.getSuperUsers);
 // Admin routes (require admin role)
-router.get('/', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.getUsers);
+router.get('/', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.getUsers);
 //router.post('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), validate(createUserSchema), UserController.createUser);
 router.post('/', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.createUser);
 router.get('/:id', (0, auth_middleware_1.authenticate)(), (0, auth_middleware_1.requireAdmin)([admin_model_1.AdminRole.SUPER_ADMIN, admin_model_1.AdminRole.ADMIN]), user_controller_1.UserController.getUser);

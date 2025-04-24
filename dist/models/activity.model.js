@@ -22,6 +22,7 @@ var ResourceType;
     ResourceType["CABINET"] = "CABINET";
     ResourceType["RECORD"] = "RECORD";
     ResourceType["FILE"] = "FILE";
+    ResourceType["LETTER"] = "LETTER";
 })(ResourceType || (exports.ResourceType = ResourceType = {}));
 var ActivityStatus;
 (function (ActivityStatus) {

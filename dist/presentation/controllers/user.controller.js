@@ -26,6 +26,24 @@ class UserController {
             next(error);
         }
     }
+    static async getReviewers(req, res, next) {
+        try {
+            const result = await user_service_1.UserService.getReviewers({});
+            res.json(result);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async getApprovers(req, res, next) {
+        try {
+            const result = await user_service_1.UserService.getApprovers({});
+            res.json(result);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
     static async getSuperUsers(req, res, next) {
         try {
             // Get the current user's ID from the authenticated request

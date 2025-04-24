@@ -131,19 +131,8 @@ class ApprovalController {
                 status: 'pending',
                 priority: 'Med',
             }));
-            // Fetch space creation requests waiting for current user's approval
-            const pendingSpaces = await space_service_1.SpaceService.getApprovalsWaitingFor(userId);
-            const spaceRequests = pendingSpaces.map(space => ({
-                id: space.id,
-                type: 'space',
-                name: space.name,
-                createdBy: space.owner,
-                createdAt: space.createdAt,
-                status: 'pending',
-                priority: 'Med',
-            }));
             // Combine all requests
-            const allRequests = [...cabinetRequests, ...spaceRequests, ...recordRequests];
+            const allRequests = [...cabinetRequests, ...recordRequests];
             // Sort by creation date, newest first
             allRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             res.json(allRequests);

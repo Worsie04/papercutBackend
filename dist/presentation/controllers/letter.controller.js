@@ -25,17 +25,12 @@ class LetterController {
             }
             const { templateId, formData, name } = req.body;
             if (!templateId || !formData) {
-                return next(new errorHandler_1.AppError(401, 'Missing required fields: templateId and formData.'));
+                return next(new errorHandler_1.AppError(400, 'Missing required fields: templateId and formData.'));
             }
             const { logoUrl, signatureUrl, stampUrl } = formData, coreFormData = __rest(formData, ["logoUrl", "signatureUrl", "stampUrl"]);
             const newLetter = await letter_service_1.LetterService.create({
-                templateId,
-                userId,
-                formData: coreFormData, // Pass only the core data
-                name,
-                logoUrl: logoUrl !== null && logoUrl !== void 0 ? logoUrl : null, // Pass URLs separately
-                signatureUrl: signatureUrl !== null && signatureUrl !== void 0 ? signatureUrl : null,
-                stampUrl: stampUrl !== null && stampUrl !== void 0 ? stampUrl : null,
+                templateId, userId, formData: coreFormData, name,
+                logoUrl: logoUrl !== null && logoUrl !== void 0 ? logoUrl : null, signatureUrl: signatureUrl !== null && signatureUrl !== void 0 ? signatureUrl : null, stampUrl: stampUrl !== null && stampUrl !== void 0 ? stampUrl : null,
             });
             res.status(201).json(newLetter);
         }
@@ -65,14 +60,11 @@ class LetterController {
             const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
             const letterId = req.params.id;
             if (!userId) {
-                console.log('User ID not found in request.');
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
             if (!letterId) {
-                console.log('Letter ID parameter is missing.');
                 return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
             }
-            // Now userId and letterId are guaranteed to be strings
             const letter = await letter_service_1.LetterService.findById(letterId, userId);
             res.status(200).json(letter);
         }
@@ -95,7 +87,7 @@ class LetterController {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
             if (!letterId) {
-                return next(new errorHandler_1.AppError(401, 'Letter ID parameter is required.'));
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
             }
             await letter_service_1.LetterService.delete(letterId, userId);
             res.status(204).send();
@@ -117,30 +109,31 @@ class LetterController {
             if (!userId) {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
-            const { originalFileId, placements, name } = req.body;
-            if (!originalFileId || !placements || !Array.isArray(placements) || placements.length === 0) {
-                return next(new errorHandler_1.AppError(400, 'Missing required fields: originalFileId and a non-empty placements array.'));
+            const { originalFileId, placements, name, reviewers, approver } = req.body;
+            if (!originalFileId || !placements || !Array.isArray(placements) || placements.length === 0 || !reviewers || !Array.isArray(reviewers) || reviewers.length === 0) {
+                return next(new errorHandler_1.AppError(400, 'Missing required fields: originalFileId, placements array, and a non-empty reviewers array.'));
             }
-            // Basic validation for placements (can be expanded)
             for (const p of placements) {
                 if (!p.type || !p.url || p.pageNumber == null || p.x == null || p.y == null || p.width == null || p.height == null) {
                     return next(new errorHandler_1.AppError(400, 'Invalid placement object structure.'));
                 }
             }
-            console.log(`Controller: Received request to create letter from PDF ${originalFileId} for user ${userId}`);
-            // Call the new service method
+            if (!reviewers.every(id => typeof id === 'string')) {
+                return next(new errorHandler_1.AppError(400, 'Invalid reviewers format. Expecting an array of strings (User IDs).'));
+            }
+            if (approver && typeof approver !== 'string') {
+                return next(new errorHandler_1.AppError(400, 'Invalid approver format. Expecting a string (User ID) or null.'));
+            }
             const newSignedLetter = await letter_service_1.LetterService.createFromPdfInteractive({
-                originalFileId,
-                placements,
-                userId,
-                name: name !== null && name !== void 0 ? name : `Signed Document ${new Date().toISOString()}` // Provide a default name
+                originalFileId, placements, userId, reviewers,
+                approver: approver !== null && approver !== void 0 ? approver : null,
+                name: name !== null && name !== void 0 ? name : `Signed Document ${new Date().toISOString().split('T')[0]}`
             });
-            // Respond with the newly created letter details (especially the signedPdfUrl)
             res.status(201).json(newSignedLetter);
         }
         catch (error) {
             console.error('Error in createFromPdfInteractive controller:', error);
-            next(error); // Pass error to the error handling middleware
+            next(error);
         }
     }
     static async getSignedPdfViewUrl(req, res, next) {
@@ -155,10 +148,7 @@ class LetterController {
             if (!letterId) {
                 return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
             }
-            console.log(`Controller: Requesting view URL for letter ${letterId} by user ${userId}`);
-            // Call the new service method
             const viewUrl = await letter_service_1.LetterService.generateSignedPdfViewUrl(letterId, userId);
-            // Respond with the generated URL
             res.status(200).json({ viewUrl });
         }
         catch (error) {
@@ -174,7 +164,6 @@ class LetterController {
         try {
             const authenticatedReq = req;
             const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
-            console.log('Approver"s Authenticated user ID:', userId);
             if (!userId) {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
@@ -185,13 +174,29 @@ class LetterController {
             next(error);
         }
     }
+    static async getLettersPendingMyAction(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req; //
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            const letters = await letter_service_1.LetterService.getLettersPendingMyAction(userId);
+            res.status(200).json(letters);
+        }
+        catch (error) {
+            console.error('Error in getLettersPendingMyAction controller:', error);
+            next(error);
+        }
+    }
     static async approveLetterReview(req, res, next) {
         var _a;
         try {
             const authenticatedReq = req;
             const reviewerUserId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
             const letterId = req.params.id;
-            const { comment } = req.body; // Optional comment from request body
+            const { comment } = req.body;
             if (!reviewerUserId) {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
@@ -201,7 +206,8 @@ class LetterController {
             if (comment && typeof comment !== 'string') {
                 return next(new errorHandler_1.AppError(400, 'Invalid comment format.'));
             }
-            const updatedLetter = await letter_service_1.LetterService.approveReview(letterId, reviewerUserId, comment);
+            // --- TODO: Change this to call the new approveStep service method ---
+            const updatedLetter = await letter_service_1.LetterService.approveStep(letterId, reviewerUserId, comment);
             res.status(200).json({ message: 'Letter review approved successfully.', letter: updatedLetter });
         }
         catch (error) {
@@ -224,8 +230,131 @@ class LetterController {
             if (reason && typeof reason !== 'string') {
                 return next(new errorHandler_1.AppError(400, 'Invalid rejection reason format.'));
             }
-            const updatedLetter = await letter_service_1.LetterService.rejectReview(letterId, reviewerUserId, reason);
+            // --- TODO: Change this to call the new rejectStep service method ---
+            const updatedLetter = await letter_service_1.LetterService.rejectStep(letterId, reviewerUserId, reason);
             res.status(200).json({ message: 'Letter review rejected successfully.', letter: updatedLetter });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    // --- NEW CONTROLLER METHODS ---
+    static async reassignLetterReview(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const currentUserId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            const letterId = req.params.id;
+            const { newUserId, reason } = req.body;
+            if (!currentUserId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            if (!letterId) {
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            }
+            if (!newUserId || typeof newUserId !== 'string') {
+                return next(new errorHandler_1.AppError(400, 'New User ID is required for reassignment.'));
+            }
+            if (reason && typeof reason !== 'string') {
+                return next(new errorHandler_1.AppError(400, 'Invalid reason format.'));
+            }
+            // --- TODO: Implement LetterService.reassignStep ---
+            // const updatedLetter = await LetterService.reassignStep(letterId, currentUserId, newUserId, reason);
+            // res.status(200).json({ message: 'Letter review reassigned successfully.', letter: updatedLetter });
+            // Placeholder response until service method is implemented
+            res.status(501).json({ message: 'Reassign service method not yet implemented.' });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async finalApproveLetter(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req; //
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            const letterId = req.params.id;
+            const { comment } = req.body; // Extract optional comment
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            if (!letterId) {
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            }
+            // Call the service method
+            const approvedLetter = await letter_service_1.LetterService.finalApproveLetter(letterId, userId, comment);
+            res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
+        }
+        catch (error) {
+            console.error(`Error in finalApproveLetter controller for letter ${req.params.id}:`, error);
+            next(error);
+        }
+    }
+    static async finalRejectLetter(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id; // This should be the final approver
+            const letterId = req.params.id;
+            const { reason } = req.body;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            if (!letterId) {
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            }
+            if (!reason || typeof reason !== 'string') {
+                return next(new errorHandler_1.AppError(400, 'Rejection reason is required.'));
+            }
+            // --- TODO: Implement LetterService.finalReject ---
+            // const rejectedLetter = await LetterService.finalReject(letterId, userId, reason);
+            // res.status(200).json({ message: 'Letter finally rejected successfully.', letter: rejectedLetter });
+            // Placeholder response
+            res.status(501).json({ message: 'Final reject service method not yet implemented.' });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async resubmitRejectedLetter(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id; // This should be the original submitter
+            const letterId = req.params.id;
+            // --- Use the defined interface for the body ---
+            const { newSignedFileId, comment } = req.body;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            if (!letterId) {
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            }
+            if (!comment || typeof comment !== 'string') {
+                return next(new errorHandler_1.AppError(400, 'Resubmission comment is required.'));
+            }
+            if (newSignedFileId && typeof newSignedFileId !== 'string') {
+                return next(new errorHandler_1.AppError(400, 'Invalid newSignedFileId format.'));
+            }
+            // --- Call the actual service method ---
+            const resubmittedLetter = await letter_service_1.LetterService.resubmitRejectedLetter(letterId, userId, newSignedFileId, comment);
+            res.status(200).json({ message: 'Letter resubmitted successfully.', letter: resubmittedLetter });
+        }
+        catch (error) {
+            console.error(`Error in resubmitRejectedLetter controller for letter ${req.params.id}:`, error);
+            next(error);
+        }
+    }
+    static async getMyRejectedLetters(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            const letters = await letter_service_1.LetterService.getMyRejectedLetters(userId);
+            res.status(200).json(letters);
         }
         catch (error) {
             next(error);
