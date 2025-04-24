@@ -17,12 +17,12 @@ router.put('/me/password', authenticate(), validate(updatePasswordSchema), UserC
 
 // List users for frontend
 router.get('/list', authenticate(), UserController.getUsers);
-router.get('/reviewers', authenticate(), UserController.getReviewers);  
-router.get('/approvers', authenticate(), UserController.getApprovers);  
+router.get('/reviewers', UserController.getReviewers);  
+router.get('/approvers', UserController.getApprovers);  
 router.get('/superusers', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getSuperUsers);
 
 // Admin routes (require admin role)
-router.get('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getUsers);
+router.get('/', authenticate(), UserController.getUsers);
 //router.post('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), validate(createUserSchema), UserController.createUser);
 router.post('/', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.createUser);
 router.get('/:id', authenticate(), requireAdmin([AdminRole.SUPER_ADMIN, AdminRole.ADMIN]), UserController.getUser);
