@@ -228,6 +228,8 @@ export class UserService {
       isActive?: boolean;
       position?: string;
       password?: string;
+      magicLinkToken?: string;
+      magicLinkTokenExpiresAt?: Date;
     }
   ): Promise<User> {
     const user = await User.findByPk(id, { include: [{ model: Role, as: 'Roles', through: { attributes: [] } }] });

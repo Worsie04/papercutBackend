@@ -10,7 +10,7 @@ const admin_model_1 = require("../../models/admin.model");
 const router = (0, express_1.Router)();
 const twoFactorController = new twoFactor_controller_1.TwoFactorController();
 // Current user routes (only require authentication)
-router.get('/me', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.getCurrentUser);
+router.get('/me', (0, auth_middleware_1.authenticate)(), (0, validate_middleware_1.validate)(user_validator_1.updateProfileSchema), user_controller_1.UserController.getCurrentUser);
 router.get('/me/checkAllTables', (0, auth_middleware_1.authenticate)(), user_controller_1.UserController.getUserWithRelatedData);
 router.put('/me', (0, auth_middleware_1.authenticate)(), (0, validate_middleware_1.validate)(user_validator_1.updateProfileSchema), user_controller_1.UserController.updateProfile);
 router.put('/me/password', (0, auth_middleware_1.authenticate)(), (0, validate_middleware_1.validate)(user_validator_1.updatePasswordSchema), user_controller_1.UserController.updatePassword);

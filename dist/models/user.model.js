@@ -12,7 +12,6 @@ class User extends sequelize_1.Model {
         super(...arguments);
         this.lastLoginAt = null;
     }
-    // Helper method to check if password matches
     async comparePassword(password) {
         return bcryptjs_1.default.compare(password, this.password);
     }
@@ -88,11 +87,20 @@ User.init({
         type: sequelize_1.DataTypes.STRING,
         allowNull: true,
     },
+    company: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+    },
+    timeZone: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: 'time_zone', // Explicitly map to snake_case column
+    },
 }, {
     sequelize: sequelize_2.sequelize,
     modelName: 'User',
     tableName: 'users',
-    underscored: true,
+    underscored: true, // This helps map timeZone to time_zone automatically if field isn't specified
     hooks: {
         beforeCreate: async (user) => {
             if (user.password) {
@@ -101,7 +109,8 @@ User.init({
             }
         },
         beforeUpdate: async (user) => {
-            if (user.changed('password')) {
+            // Ensure the password field exists and has changed before hashing
+            if (user.password && user.changed('password')) {
                 const salt = await bcryptjs_1.default.genSalt(10);
                 user.password = await bcryptjs_1.default.hash(user.password, salt);
             }

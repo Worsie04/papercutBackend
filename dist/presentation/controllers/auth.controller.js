@@ -11,13 +11,12 @@ const organization_service_1 = require("../../services/organization.service");
 const email_service_1 = require("../../services/email.service");
 const crypto_1 = __importDefault(require("crypto"));
 class AuthController {
-    static async login(req, res) {
+    static async login(req, res, next) {
         console.log("login called");
         try {
             const { email, password, twoFactorToken } = req.body;
             const result = await auth_service_1.AuthService.login(email, password, twoFactorToken);
             if (result.requiresTwoFactor) {
-                // Return partial response when 2FA is required
                 res.json({
                     requiresTwoFactor: true,
                     user: {
@@ -29,14 +28,12 @@ class AuthController {
                 });
                 return;
             }
-            // Set JWT token in cookie
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'strict',
-                maxAge: 24 * 60 * 60 * 1000 // 24 hours
+                maxAge: 24 * 60 * 60 * 1000
             });
-            // Return full response
             res.json({
                 user: result.user,
                 accessToken: result.accessToken,
@@ -45,12 +42,7 @@ class AuthController {
         }
         catch (error) {
             console.error('Login error:', error);
-            if (error instanceof errorHandler_1.AppError) {
-                res.status(error.statusCode).json({ message: error.message });
-            }
-            else {
-                res.status(500).json({ message: 'Internal server error' });
-            }
+            next(error); // Pass error to error handler middleware
         }
     }
     ;
@@ -61,12 +53,11 @@ class AuthController {
             console.log('Login attempt for admin:', email);
             const result = await auth_service_1.AuthService.loginAdmin(email, password);
             console.log('Login successful for admin:', email);
-            // Set token in cookie
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                maxAge: 24 * 60 * 60 * 1000 // 24 hours
+                sameSite: 'strict', // Changed to strict for better security
+                maxAge: 24 * 60 * 60 * 1000
             });
             res.json(result);
         }
@@ -77,9 +68,22 @@ class AuthController {
     }
     static async refreshToken(req, res, next) {
         try {
-            const { refreshToken } = req.body;
+            const { refreshToken } = req.body; // Assuming refresh token sent in body
+            // Or check cookies: const refreshToken = req.cookies?.refresh_token_w;
+            if (!refreshToken) {
+                throw new errorHandler_1.AppError(401, 'Refresh token not provided');
+            }
             const result = await auth_service_1.AuthService.refreshToken(refreshToken);
-            res.json(result);
+            // Set new access token cookie
+            res.cookie('access_token_w', result.accessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: 24 * 60 * 60 * 1000 // Example: 24 hours
+            });
+            // Optionally set new refresh token cookie if using rolling refresh tokens
+            // res.cookie('refresh_token_w', result.refreshToken, { ...cookie options });
+            res.json({ accessToken: result.accessToken }); // Only send necessary info back
         }
         catch (error) {
             next(error);
@@ -109,11 +113,16 @@ class AuthController {
     }
     static async logout(req, res, next) {
         try {
-            if (!req.user) {
-                throw new errorHandler_1.AppError(401, 'Not authenticated');
-            }
-            await auth_service_1.AuthService.logout(req.user.id, req.user.type);
-            res.json({ message: 'Logged out successfully' });
+            // No need to check req.user here, just clear the cookie
+            res.clearCookie('access_token_w', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict'
+            });
+            // Optionally clear refresh token cookie if used
+            // res.clearCookie('refresh_token_w', { ...cookie options });
+            // Optionally, could add token invalidation logic on backend if needed (e.g., blocklist)
+            res.status(200).json({ message: 'Logged out successfully' });
         }
         catch (error) {
             next(error);
@@ -140,7 +149,6 @@ class AuthController {
             res.json({ message: 'Password reset instructions sent to email' });
         }
         catch (error) {
-            // Don't expose whether the email exists
             res.json({ message: 'If the email exists, reset instructions will be sent' });
         }
     }
@@ -167,14 +175,11 @@ class AuthController {
             next(error);
         }
     }
-    /**
-     * Check if an email exists and has a password set
-     */
     static async checkEmail(req, res) {
         try {
             const { email } = req.body;
             const user = await user_service_1.UserService.findByEmail(email);
-            const organization = await organization_service_1.OrganizationService.findByDomain(email.split('@')[1]);
+            const organization = (email === null || email === void 0 ? void 0 : email.includes('@')) ? await organization_service_1.OrganizationService.findByDomain(email.split('@')[1]) : null;
             return res.json({
                 exists: !!user,
                 hasPassword: (user === null || user === void 0 ? void 0 : user.password) ? true : false,
@@ -190,38 +195,32 @@ class AuthController {
             return res.status(500).json({ message: 'Internal server error' });
         }
     }
-    /**
-     * Send a magic link to the user's email
-     */
     static async sendMagicLink(req, res) {
         try {
             const { email } = req.body;
+            if (!email || !email.includes('@')) {
+                throw new errorHandler_1.AppError(400, 'Invalid email address');
+            }
             const domain = email.split('@')[1];
-            // Check if the email domain belongs to an organization
             const organization = await organization_service_1.OrganizationService.findByDomain(domain);
             if (!organization) {
                 return res.status(403).json({ message: 'Email domain not associated with any organization' });
             }
-            // Get or create user
             let user = await user_service_1.UserService.findByEmail(email);
             if (!user) {
-                // Create user with minimal required fields
                 user = await user_service_1.UserService.createUser({
                     email,
-                    password: '', // temporary password
-                    firstName: email.split('@')[0], // temporary name from email
+                    password: '',
+                    firstName: email.split('@')[0],
                     lastName: 'User',
                     role: 'member_full',
                 });
             }
-            // Generate magic link token
             const token = await auth_service_1.AuthService.generateMagicLinkToken(user.id);
-            // Save the magic link token to the user record
             await user_service_1.UserService.updateUser(user.id, {
                 magicLinkToken: token,
-                magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+                magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
             });
-            // Send magic link email with the correct token parameter
             console.log('Generated token:', token);
             console.log('CLIENT_URL:', process.env.CLIENT_URL);
             const magicLink = `${process.env.CLIENT_URL}/login?token=${token}`;
@@ -237,13 +236,9 @@ class AuthController {
             return res.status(500).json({ message: 'Internal server error' });
         }
     }
-    /**
-     * Verify magic link token and authenticate user
-     */
     static async verifyMagicLink(req, res) {
         try {
             const { token } = req.body;
-            // Verify token and get user
             const userId = await auth_service_1.AuthService.verifyMagicLinkToken(token);
             if (!userId) {
                 return res.status(401).json({ message: 'Invalid or expired token' });
@@ -252,13 +247,18 @@ class AuthController {
             if (!user) {
                 return res.status(404).json({ message: 'User not found' });
             }
-            // Check if 2FA is enabled
             const requiresTwoFactor = await auth_service_1.AuthService.isTwoFactorEnabled(user.id);
-            // Generate access token
             const accessToken = await auth_service_1.AuthService.generateAccessToken(user);
+            // Set cookie after successful magic link verification
+            res.cookie('access_token_w', accessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: 24 * 60 * 60 * 1000
+            });
             return res.json({
                 user,
-                accessToken,
+                accessToken, // Still return token for potential use, but cookie is primary
                 requiresTwoFactor,
             });
         }
@@ -267,13 +267,9 @@ class AuthController {
             return res.status(500).json({ message: 'Internal server error' });
         }
     }
-    /**
-     * Set password for magic link users
-     */
     static async setPassword(req, res) {
         try {
             const { token, password } = req.body;
-            // Verify token and get user
             const userId = await auth_service_1.AuthService.verifyMagicLinkToken(token);
             if (!userId) {
                 return res.status(401).json({ message: 'Invalid or expired token' });
@@ -282,12 +278,16 @@ class AuthController {
             if (!user) {
                 return res.status(404).json({ message: 'User not found' });
             }
-            // Update user's password
             await user_service_1.UserService.updateUser(userId, { password, isActive: true });
-            // Generate access token
             const accessToken = await auth_service_1.AuthService.generateAccessToken(user);
-            // Clear the magic link token from the user record
             await auth_service_1.AuthService.clearMagicLinkToken(userId);
+            // Set cookie after setting password
+            res.cookie('access_token_w', accessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: 24 * 60 * 60 * 1000
+            });
             return res.json({
                 user,
                 accessToken,
@@ -304,7 +304,6 @@ class AuthController {
     static async register(req, res) {
         try {
             const { firstName, lastName, email, role, position } = req.body;
-            // Create user with a temporary password
             const temporaryPassword = crypto_1.default.randomBytes(20).toString('hex');
             const user = await user_service_1.UserService.createUser({
                 email,
@@ -315,13 +314,11 @@ class AuthController {
                 isActive: false,
                 position,
             });
-            // Generate magic link token
             const token = await auth_service_1.AuthService.generateMagicLinkToken(user.id);
             await user_service_1.UserService.updateUser(user.id, {
                 magicLinkToken: token,
-                magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+                magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
             });
-            // Send magic link email
             const magicLinkUrl = `${process.env.CLIENT_URL}/create-password?token=${token}`;
             await email_service_1.EmailService.sendMagicLink(email, magicLinkUrl);
             res.status(201).json({

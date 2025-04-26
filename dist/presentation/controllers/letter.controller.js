@@ -290,6 +290,31 @@ class LetterController {
             next(error);
         }
     }
+    static async finalApproveLetterSingle(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            const letterId = req.params.id;
+            const { comment } = req.body; // Extract optional comment
+            if (!userId) {
+                // Should ideally be caught by authentication middleware, but double-check
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            if (!letterId) {
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            }
+            console.log(`[Controller] Attempting final approval (single/non-PDF) for letter ${letterId} by user ${userId}`);
+            // Call the NEW service method
+            const approvedLetter = await letter_service_1.LetterService.finalApproveLetterSingle(letterId, userId, comment);
+            res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
+        }
+        catch (error) {
+            console.error(`[Controller] Error in finalApproveLetterSingle for letter ${req.params.id}:`, error);
+            // Pass error to the centralized error handler
+            next(error);
+        }
+    }
     static async finalRejectLetter(req, res, next) {
         var _a;
         try {

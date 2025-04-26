@@ -19,4 +19,5 @@ router.post('/:id/approve-review', letter_controller_1.LetterController.approveL
 router.post('/:id/reject-review', letter_controller_1.LetterController.rejectLetterReview);
 router.post('/:id/resubmit', letter_controller_1.LetterController.resubmitRejectedLetter);
 router.post('/:id/final-approve', letter_controller_1.LetterController.finalApproveLetter);
+router.post('/:id/final-approve-letter', letter_controller_1.LetterController.finalApproveLetterSingle);
 exports.default = router;

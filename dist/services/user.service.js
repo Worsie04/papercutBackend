@@ -150,41 +150,21 @@ class UserService {
         return this.getUser(user.id);
     }
     static async updateUser(id, data) {
-        const user = await user_model_1.User.findByPk(id, {
-            include: [{
-                    model: role_model_1.Role,
-                    as: 'Roles',
-                    through: { attributes: [] }
-                }]
-        });
-        if (!user) {
+        const user = await user_model_1.User.findByPk(id, { include: [{ model: role_model_1.Role, as: 'Roles', through: { attributes: [] } }] });
+        if (!user)
             throw new errorHandler_1.AppError(404, 'User not found');
-        }
         if (data.email && data.email !== user.email) {
-            const existingUser = await user_model_1.User.findOne({
-                where: { email: data.email },
-            });
-            if (existingUser) {
+            const existing = await user_model_1.User.findOne({ where: { email: data.email } });
+            if (existing)
                 throw new errorHandler_1.AppError(400, 'Email already in use');
-            }
         }
-        // Handle role update if provided
+        await user.update(data);
         if (data.role) {
-            const role = await role_model_1.Role.findOne({
-                where: { name: data.role }
-            });
-            if (!role) {
-                throw new errorHandler_1.AppError(400, 'Invalid role specified');
-            }
-            await sequelize_2.sequelize.transaction(async (transaction) => {
-                await user.update(data, { transaction });
-                await user.setRoles([role], { transaction });
+            const role = await role_model_1.Role.findOne({ where: { name: data.role } });
+            await sequelize_2.sequelize.transaction(async (t) => {
+                await user.setRoles([role], { transaction: t });
             });
         }
-        else {
-            await user.update(data);
-        }
-        console.log('User updated:', data.position);
         return this.getUser(id);
     }
     static async deleteUser(id) {

@@ -8,11 +8,14 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const config_1 = require("../config");
 class JwtUtil {
     static generateToken(payload) {
+        // console.log('Generating token with expiresIn:', this.EXPIRES_IN);
+        // console.log('Using JWT Secret:', this.SECRET);
         return jsonwebtoken_1.default.sign(payload, this.SECRET, {
             expiresIn: this.EXPIRES_IN,
         });
     }
     static verifyToken(token) {
+        //console.log('Using JWT VERİFY Secret :', this.SECRET);
         try {
             return jsonwebtoken_1.default.verify(token, this.SECRET);
         }
