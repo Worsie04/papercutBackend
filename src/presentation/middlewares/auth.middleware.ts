@@ -60,7 +60,7 @@ export const authenticate = (type?: UserType | UserType[]) => {
          res.clearCookie('access_token_w', {
            httpOnly: true,
            secure: process.env.NODE_ENV === 'production',
-           sameSite: 'lax'
+           sameSite: 'none'
          });
 
          // Xətanın detallarını və tokenin məzmununu log edək
@@ -214,7 +214,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
       res.clearCookie('access_token_w', {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'lax' // Use lax
+         sameSite: 'none' // Use lax
       });
       console.error('JWT Verification Error (requireAuth):', error);
       if (error.name === 'TokenExpiredError') {
