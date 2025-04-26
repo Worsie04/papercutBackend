@@ -60,7 +60,7 @@ export const authenticate = (type?: UserType | UserType[]) => {
          res.clearCookie('access_token_w', {
            httpOnly: true,
            secure: process.env.NODE_ENV === 'production',
-           sameSite: 'none'
+           sameSite: 'strict'
          });
 
          // Xətanın detallarını və tokenin məzmununu log edək
