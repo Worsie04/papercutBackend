@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initializeApp = exports.app = void 0;
+exports.app = exports.initializeApp = void 0;
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -16,21 +16,25 @@ const routes_1 = __importDefault(require("./presentation/routes"));
 const sequelize_1 = require("./infrastructure/database/sequelize");
 const app = (0, express_1.default)();
 exports.app = app;
-/* ---------  1 TRUST THE RENDER PROXY *BEFORE* COOKIES -------- */
-app.set('trust proxy', 1); // ← moved to the top
-/* ---------  2 SECURITY MIDDLEWARES --------------------------- */
+// Initialize database and models before starting the server
+let isInitialized = false;
+const initializeApp = async () => {
+    if (!isInitialized) {
+        try {
+            await (0, sequelize_1.initializeDatabase)();
+            isInitialized = true;
+        }
+        catch (error) {
+            console.error('Failed to initialize database:', error);
+            process.exit(1);
+        }
+    }
+};
+exports.initializeApp = initializeApp;
+// Security middleware
 app.use((0, helmet_1.default)());
-/* ---------  3 CORS  ------------------------------------------ */
-const allowedOrigins = Array.isArray(config_1.config.corsOrigins)
-    ? config_1.config.corsOrigins.map((o) => o.trim()).filter(Boolean)
-    : (typeof config_1.config.corsOrigins === 'string'
-        ? config_1.config.corsOrigins
-        : '')
-        .split(',')
-        .map((o) => o.trim())
-        .filter(Boolean);
 app.use((0, cors_1.default)({
-    origin: allowedOrigins,
+    origin: config_1.config.corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: [
@@ -40,37 +44,39 @@ app.use((0, cors_1.default)({
         'X-Requested-With',
         'Content-Length',
         'Accept-Encoding',
-        'X-CSRF-Token',
-    ],
+        'X-CSRF-Token'
+    ]
 }));
-/* ---------  4 COOKIES & SESSION ------------------------------ */
+// Cookie parser middleware
 app.use((0, cookie_parser_1.default)());
+// Global rate limiting to prevent abuse
+// const limiter = rateLimit({
+//   windowMs: config.security.rateLimitWindowMs,
+//   max: config.security.rateLimitMax,
+//   message: 'Too many requests from this IP, please try again later'
+// });
+// app.use(limiter);
+// Session middleware
 app.use((0, express_session_1.default)({
     secret: config_1.config.session.secret,
     resave: false,
     saveUninitialized: false,
     cookie: {
+        secure: config_1.config.nodeEnv === 'production',
         httpOnly: true,
-        secure: true, // always HTTPS on Render
-        sameSite: 'none', // cross-site cookie
-        domain: '.onrender.com', // any sub-domain (api., client.)
         maxAge: config_1.config.session.maxAge,
-    },
+        sameSite: 'strict',
+    }
 }));
-/* ---------  5 LOGGING & BODY PARSERS ------------------------- */
+// Logging middleware
 app.use(logger_middleware_1.requestLogger);
+// Body parsing middleware
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
-/* ---------  6 ROUTES & ERROR HANDLERS ------------------------ */
+// Mount routes
 app.use(routes_1.default);
+app.set('trust proxy', 1); // Proxy arxasında işləmək üçün
+// Error logging
 app.use(logger_middleware_1.errorLogger);
+// Error handling
 app.use(errorHandler_1.errorHandler);
-/* database initialiser stays unchanged ----------------------- */
-let isInitialized = false;
-const initializeApp = async () => {
-    if (!isInitialized) {
-        await (0, sequelize_1.initializeDatabase)();
-        isInitialized = true;
-    }
-};
-exports.initializeApp = initializeApp;
