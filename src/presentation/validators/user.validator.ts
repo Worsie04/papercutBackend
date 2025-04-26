@@ -17,13 +17,31 @@ export const updateUserSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+
 export const updateProfileSchema = z.object({
-  firstName: z.string().min(2).max(50).optional(),
-  lastName: z.string().min(2).max(50).optional(),
-  phone: z.string().regex(/^\+?[\d\s-]+$/).optional().nullable(),
+  firstName: z.string().min(2, 'First name requires at least 2 characters').max(50).optional(),
+  lastName: z.string().min(2, 'Last name requires at least 2 characters').max(50).optional(),
+  phone: z.string()
+           .regex(/^\+?[\d\s()-]+$/, { message: "Invalid phone number format" })
+           .max(25, 'Phone number too long')
+           .optional()
+           .nullable(), // Allow null or undefined
+  company: z.string()
+            .max(100, 'Company name cannot exceed 100 characters')
+            .optional()
+            .nullable(), // Allow null or undefined
+  timeZone: z.string()
+             .max(100, 'Time zone name cannot exceed 100 characters')
+             .optional()
+             .nullable(), // Allow null or undefined
+  avatar: z.string()
+           .url({ message: "Invalid URL format for avatar" })
+           .max(512, 'Avatar URL too long')
+           .optional()
+           .nullable(), // Allow null or undefined
 });
 
 export const updatePasswordSchema = z.object({
-  currentPassword: z.string().min(6),
-  newPassword: z.string().min(6),
-}); 
+  currentPassword: z.string().min(1, 'Current password is required'), // Use min(1) for required check
+  newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+});

@@ -223,54 +223,29 @@ export class UserService {
       lastName?: string;
       role?: string;
       phone?: string;
+      company?: string;
+      timeZone?: string;
       isActive?: boolean;
       position?: string;
       password?: string;
-      magicLinkToken?: string;
-      magicLinkTokenExpiresAt?: Date;
     }
   ): Promise<User> {
-    const user = await User.findByPk(id, {
-      include: [{
-        model: Role,
-        as: 'Roles',
-        through: { attributes: [] }
-      }]
-    });
-    if (!user) {
-      throw new AppError(404, 'User not found');
-    }
-
+    const user = await User.findByPk(id, { include: [{ model: Role, as: 'Roles', through: { attributes: [] } }] });
+    if (!user) throw new AppError(404, 'User not found');
     if (data.email && data.email !== user.email) {
-      const existingUser = await User.findOne({
-        where: { email: data.email },
-      });
-
-      if (existingUser) {
-        throw new AppError(400, 'Email already in use');
-      }
+      const existing = await User.findOne({ where: { email: data.email } });
+      if (existing) throw new AppError(400, 'Email already in use');
     }
-
-    // Handle role update if provided
+    await user.update(data);
     if (data.role) {
-      const role = await Role.findOne({
-        where: { name: data.role }
+      const role = await Role.findOne({ where: { name: data.role } });
+      await sequelize.transaction(async (t) => {
+        await user.setRoles([role!], { transaction: t });
       });
-
-      if (!role) {
-        throw new AppError(400, 'Invalid role specified');
-      }
-
-      await sequelize.transaction(async (transaction: Transaction) => {
-        await user.update(data, { transaction });
-        await user.setRoles([role], { transaction });
-      });
-    } else {
-      await user.update(data);
     }
-    console.log('User updated:', data.position);
     return this.getUser(id);
   }
+  
 
   static async deleteUser(id: string): Promise<void> {
     const user = await User.findByPk(id);

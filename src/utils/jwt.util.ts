@@ -13,12 +13,15 @@ export class JwtUtil {
   private static readonly EXPIRES_IN = config.jwt.expiresIn;
 
   static generateToken(payload: TokenPayload): string {
+    // console.log('Generating token with expiresIn:', this.EXPIRES_IN);
+    // console.log('Using JWT Secret:', this.SECRET);
     return jwt.sign(payload, this.SECRET, {
       expiresIn: this.EXPIRES_IN,
     });
   }
 
   static verifyToken(token: string): TokenPayload {
+    //console.log('Using JWT VERİFY Secret :', this.SECRET);
     try {
       return jwt.verify(token, this.SECRET) as TokenPayload;
     } catch (error: any) {

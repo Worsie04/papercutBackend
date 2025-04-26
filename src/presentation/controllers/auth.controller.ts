@@ -8,9 +8,9 @@ import crypto from 'crypto';
 import { OrganizationMemberService } from '../../services/organization-member.service';
 
 export class AuthController {
-  
 
-  static async login(req: Request, res: Response): Promise<void>{
+
+  static async login(req: Request, res: Response, next: NextFunction) {
     console.log("login called")
     try {
       const { email, password, twoFactorToken } = req.body;
@@ -18,7 +18,6 @@ export class AuthController {
       const result = await AuthService.login(email, password, twoFactorToken);
 
       if (result.requiresTwoFactor) {
-        // Return partial response when 2FA is required
         res.json({
           requiresTwoFactor: true,
           user: {
@@ -31,15 +30,13 @@ export class AuthController {
         return;
       }
 
-      // Set JWT token in cookie
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        maxAge: 24 * 60 * 60 * 1000
       });
 
-      // Return full response
       res.json({
         user: result.user,
         accessToken: result.accessToken,
@@ -47,11 +44,7 @@ export class AuthController {
       });
     } catch (error) {
       console.error('Login error:', error);
-      if (error instanceof AppError) {
-        res.status(error.statusCode).json({ message: error.message });
-      } else {
-        res.status(500).json({ message: 'Internal server error' });
-      }
+      next(error); // Pass error to error handler middleware
     }
   };
 
@@ -60,18 +53,17 @@ export class AuthController {
     try {
       const { email, password } = req.body;
       console.log('Login attempt for admin:', email);
-      
+
       const result = await AuthService.loginAdmin(email, password);
       console.log('Login successful for admin:', email);
-      
-      // Set token in cookie
+
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        sameSite: 'strict', // Changed to strict for better security
+        maxAge: 24 * 60 * 60 * 1000
       });
-      
+
       res.json(result);
     } catch (error) {
       console.error('Admin login error:', error);
@@ -81,9 +73,24 @@ export class AuthController {
 
   static async refreshToken(req: Request, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body;
+      const { refreshToken } = req.body; // Assuming refresh token sent in body
+      // Or check cookies: const refreshToken = req.cookies?.refresh_token_w;
+      if (!refreshToken) {
+        throw new AppError(401, 'Refresh token not provided');
+      }
       const result = await AuthService.refreshToken(refreshToken);
-      res.json(result);
+
+      // Set new access token cookie
+       res.cookie('access_token_w', result.accessToken, {
+         httpOnly: true,
+         secure: process.env.NODE_ENV === 'production',
+         sameSite: 'strict',
+         maxAge: 24 * 60 * 60 * 1000 // Example: 24 hours
+       });
+       // Optionally set new refresh token cookie if using rolling refresh tokens
+       // res.cookie('refresh_token_w', result.refreshToken, { ...cookie options });
+
+      res.json({ accessToken: result.accessToken }); // Only send necessary info back
     } catch (error) {
       next(error);
     }
@@ -113,11 +120,18 @@ export class AuthController {
 
   static async logout(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.user) {
-        throw new AppError(401, 'Not authenticated');
-      }
-      await AuthService.logout(req.user.id, req.user.type as 'user' | 'admin');
-      res.json({ message: 'Logged out successfully' });
+      // No need to check req.user here, just clear the cookie
+      res.clearCookie('access_token_w', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict'
+      });
+      // Optionally clear refresh token cookie if used
+      // res.clearCookie('refresh_token_w', { ...cookie options });
+
+      // Optionally, could add token invalidation logic on backend if needed (e.g., blocklist)
+
+      res.status(200).json({ message: 'Logged out successfully' });
     } catch (error) {
       next(error);
     }
@@ -149,7 +163,6 @@ export class AuthController {
       // TODO: Send email with reset token
       res.json({ message: 'Password reset instructions sent to email' });
     } catch (error) {
-      // Don't expose whether the email exists
       res.json({ message: 'If the email exists, reset instructions will be sent' });
     }
   }
@@ -181,14 +194,11 @@ export class AuthController {
     }
   }
 
-  /**
-   * Check if an email exists and has a password set
-   */
   static async checkEmail(req: Request, res: Response) {
     try {
       const { email } = req.body;
       const user = await UserService.findByEmail(email);
-      const organization = await OrganizationService.findByDomain(email.split('@')[1]);
+      const organization = email?.includes('@') ? await OrganizationService.findByDomain(email.split('@')[1]) : null;
 
       return res.json({
         exists: !!user,
@@ -205,43 +215,37 @@ export class AuthController {
     }
   }
 
-  /**
-   * Send a magic link to the user's email
-   */
   static async sendMagicLink(req: Request, res: Response) {
     try {
       const { email } = req.body;
+      if (!email || !email.includes('@')) {
+           throw new AppError(400, 'Invalid email address');
+       }
       const domain = email.split('@')[1];
-      
-      // Check if the email domain belongs to an organization
+
       const organization = await OrganizationService.findByDomain(domain);
       if (!organization) {
         return res.status(403).json({ message: 'Email domain not associated with any organization' });
       }
 
-      // Get or create user
       let user = await UserService.findByEmail(email);
       if (!user) {
-        // Create user with minimal required fields
         user = await UserService.createUser({
           email,
-          password: '', // temporary password
-          firstName: email.split('@')[0], // temporary name from email
+          password: '',
+          firstName: email.split('@')[0],
           lastName: 'User',
           role: 'member_full',
         });
       }
 
-      // Generate magic link token
       const token = await AuthService.generateMagicLinkToken(user.id);
-      
-      // Save the magic link token to the user record
+
       await UserService.updateUser(user.id, {
         magicLinkToken: token,
-        magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+        magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
       });
-      
-      // Send magic link email with the correct token parameter
+
       console.log('Generated token:', token);
       console.log('CLIENT_URL:', process.env.CLIENT_URL);
       const magicLink = `${process.env.CLIENT_URL}/login?token=${token}`;
@@ -258,14 +262,10 @@ export class AuthController {
     }
   }
 
-  /**
-   * Verify magic link token and authenticate user
-   */
   static async verifyMagicLink(req: Request, res: Response) {
     try {
       const { token } = req.body;
-      
-      // Verify token and get user
+
       const userId = await AuthService.verifyMagicLinkToken(token);
       if (!userId) {
         return res.status(401).json({ message: 'Invalid or expired token' });
@@ -276,15 +276,21 @@ export class AuthController {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Check if 2FA is enabled
       const requiresTwoFactor = await AuthService.isTwoFactorEnabled(user.id);
-      
-      // Generate access token
+
       const accessToken = await AuthService.generateAccessToken(user);
+
+       // Set cookie after successful magic link verification
+       res.cookie('access_token_w', accessToken, {
+         httpOnly: true,
+         secure: process.env.NODE_ENV === 'production',
+         sameSite: 'strict',
+         maxAge: 24 * 60 * 60 * 1000
+       });
 
       return res.json({
         user,
-        accessToken,
+        accessToken, // Still return token for potential use, but cookie is primary
         requiresTwoFactor,
       });
     } catch (error) {
@@ -293,14 +299,10 @@ export class AuthController {
     }
   }
 
-  /**
-   * Set password for magic link users
-   */
   static async setPassword(req: Request, res: Response) {
     try {
       const { token, password } = req.body;
-      
-      // Verify token and get user
+
       const userId = await AuthService.verifyMagicLinkToken(token);
       if (!userId) {
         return res.status(401).json({ message: 'Invalid or expired token' });
@@ -311,14 +313,19 @@ export class AuthController {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Update user's password
       await UserService.updateUser(userId, { password, isActive: true });
 
-      // Generate access token
       const accessToken = await AuthService.generateAccessToken(user);
 
-      // Clear the magic link token from the user record
       await AuthService.clearMagicLinkToken(userId);
+
+       // Set cookie after setting password
+       res.cookie('access_token_w', accessToken, {
+         httpOnly: true,
+         secure: process.env.NODE_ENV === 'production',
+         sameSite: 'strict',
+         maxAge: 24 * 60 * 60 * 1000
+       });
 
       return res.json({
         user,
@@ -337,7 +344,6 @@ export class AuthController {
     try {
       const { firstName, lastName, email, role, position } = req.body;
 
-      // Create user with a temporary password
       const temporaryPassword = crypto.randomBytes(20).toString('hex');
       const user = await UserService.createUser({
         email,
@@ -349,16 +355,14 @@ export class AuthController {
         position,
       });
 
-      // Generate magic link token
       const token = await AuthService.generateMagicLinkToken(user.id);
-      
+
 
       await UserService.updateUser(user.id, {
         magicLinkToken: token,
-        magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
+        magicLinkTokenExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
       });
 
-      // Send magic link email
       const magicLinkUrl = `${process.env.CLIENT_URL}/create-password?token=${token}`;
       await EmailService.sendMagicLink(email, magicLinkUrl);
 
@@ -375,4 +379,4 @@ export class AuthController {
       }
     }
   }
-} 
+}

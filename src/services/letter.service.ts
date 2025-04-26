@@ -23,6 +23,7 @@ import { NotificationService } from './notification.service';
 
 import { ActivityService } from './activity.service';
 import { ActivityType, ResourceType } from '../models/activity.model';
+import { TemplateReviewerService } from './template-reviewer.service';
 
 const s3Client = new S3Client({
   region: 'auto',
@@ -70,30 +71,232 @@ interface CreateFromPdfData {
 
 export class LetterService {
 
-  static async create(data: CreateLetterData): Promise<Letter> {
-     const { templateId, userId, formData, name, logoUrl, signatureUrl, stampUrl } = data;
-     const initialStatus = LetterWorkflowStatus.DRAFT;
-     if (!templateId) { throw new AppError(400, 'Template ID is required when creating a letter from a template.'); }
-     if (!userId || !formData) { throw new AppError(400,'Missing required data: userId and formData are required.'); }
-     const template = await Template.findByPk(templateId, { include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName'] }] });
-     if (!template) { throw new AppError(404,`Template with ID ${templateId} not found.`); }
-     const submitter = await User.findByPk(userId, { attributes: ['id', 'firstName', 'lastName', 'email'] });
-     if (!submitter) { throw new AppError(404, `Submitter user with ID ${userId} not found.`); }
-     let newLetter: Letter | null = null;
-     try {
-       newLetter = await Letter.create({
-         templateId, userId, formData,
-         name: name ?? template.name ?? `Letter from ${template.id.substring(0, 6)}`,
-         logoUrl: logoUrl ?? null, signatureUrl: signatureUrl ?? null, stampUrl: stampUrl ?? null,
-         workflowStatus: initialStatus,
-       });
-
-       const finalLetter = await this.findById(newLetter.id, userId);
-       if (!finalLetter) { throw new AppError(500, 'Failed to refetch the newly created letter.'); }
-       return finalLetter;
-     } catch (error) { console.error('Error creating letter in service:', error); throw error; }
-  }
-
+    static async create(data: CreateLetterData): Promise<Letter> {
+        const { templateId, userId: submitterId, formData, name, logoUrl, signatureUrl, stampUrl } = data;
+   
+        if (!templateId) { throw new AppError(400, 'Template ID is required when creating a letter from a template.'); }
+        if (!submitterId || !formData) { throw new AppError(400,'Missing required data: userId and formData are required.'); }
+   
+        const transaction = await sequelize.transaction();
+        let newLetter: Letter | null = null;
+   
+        try {
+            // 1. Fetch Template and Owner (Approver)
+            const template = await Template.findByPk(templateId, {
+                include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }],
+                transaction // Include transaction for consistent read
+            });
+            if (!template) {
+                throw new AppError(404,`Template with ID ${templateId} not found.`);
+            }
+            const approverId = template.userId; // Template owner is the final approver
+            const approverUser = template.user; // Already included
+            if (!approverUser) {
+                // This indicates a data inconsistency if template has userId but user record doesn't exist
+                throw new AppError(500, `Template owner user not found for template ID ${templateId}.`);
+            }
+   
+   
+            // 2. Fetch Reviewers from TemplateReviewers table
+            const templateReviewers = await TemplateReviewerService.getReviewersForTemplate(templateId);
+            // Filter out the submitter and the approver from the reviewer list
+            const reviewerUserIds = templateReviewers
+                .map(reviewer => reviewer.id)
+                .filter(id => id !== submitterId && id !== approverId);
+   
+   
+            // 3. Validate Submitter exists
+            const submitter = await User.findByPk(submitterId, { attributes: ['id', 'firstName', 'lastName', 'email'], transaction });
+            if (!submitter) {
+                // This should ideally be caught by auth middleware, but good to double-check
+                throw new AppError(404, `Submitter user with ID ${submitterId} not found.`);
+            }
+   
+   
+            // Determine initial status and next action
+            let initialStatus: LetterWorkflowStatus;
+            let nextStepIndex: number | null = null;
+            let nextActionById: string | null = null;
+            const workflowParticipants: { userId: string; sequenceOrder: number }[] = [];
+   
+            // Add reviewers first in sequence
+            if (reviewerUserIds && reviewerUserIds.length > 0) {
+                initialStatus = LetterWorkflowStatus.PENDING_REVIEW;
+                reviewerUserIds.forEach((reviewerId, index) => {
+                    workflowParticipants.push({ userId: reviewerId, sequenceOrder: index + 1 });
+                });
+                // First reviewer is the initial action taker
+                nextStepIndex = 1;
+                nextActionById = workflowParticipants[0].userId;
+            } else {
+                // If no reviewers, goes directly to the approver (template owner)
+                initialStatus = LetterWorkflowStatus.PENDING_APPROVAL;
+                // nextStepIndex remains null initially, it will be set to APPROVER_SEQUENCE
+                // when the logic progresses to the approval stage
+                nextActionById = approverId;
+            }
+   
+            // Add the final approver (template owner) with the distinct sequence
+            if (approverId) {
+                // Avoid adding the approver again if they were also listed as a reviewer (though filtered above)
+                 if (!workflowParticipants.some(p => p.userId === approverId)) {
+                      workflowParticipants.push({ userId: approverId, sequenceOrder: APPROVER_SEQUENCE });
+                 }
+            } else {
+                // If no approver (shouldn't happen if template has an owner)
+                // the letter is considered approved immediately if no workflow steps
+                if (workflowParticipants.length === 0) {
+                     initialStatus = LetterWorkflowStatus.APPROVED;
+                     nextStepIndex = null;
+                     nextActionById = null;
+                } else {
+                     // This case should ideally not happen: reviewers but no final approver
+                     // Handle as an error or a different workflow path if necessary
+                      throw new AppError(500, 'Template has reviewers but no designated approver (owner).');
+                }
+            }
+   
+            // Sort workflow participants by sequence order
+            workflowParticipants.sort((a, b) => a.sequenceOrder - b.sequenceOrder);
+   
+   
+            // 4. Create the Letter record
+            newLetter = await Letter.create({
+                templateId,
+                userId: submitterId, // Original submitter
+                formData, // Core form data
+                name: name ?? template.name ?? `Letter from ${template.id.substring(0, 6)}`,
+                logoUrl: logoUrl ?? null,
+                signatureUrl: signatureUrl ?? null,
+                stampUrl: stampUrl ?? null,
+                workflowStatus: initialStatus,
+                currentStepIndex: nextStepIndex, // Set initial step index (1 for first reviewer, null for direct approval)
+                nextActionById: nextActionById,
+                originalPdfFileId: null, // This is for PDF upload flow
+                signedPdfUrl: null, // This will be generated after initial review/approval if needed
+                qrCodeUrl: null,
+                publicLink: null,
+                finalSignedPdfUrl: null,
+            }, { transaction });
+   
+            // 5. Create LetterReviewer entries for all participants
+            const reviewerEntries = workflowParticipants.map(p => ({
+                letterId: newLetter!.id, // Use newLetter.id (guaranteed to exist in transaction)
+                userId: p.userId,
+                sequenceOrder: p.sequenceOrder,
+                status: LetterReviewerStatus.PENDING, // All start as pending
+                // isApprover: p.isApprover // This field is not in the current model/migration
+            }));
+            await LetterReviewer.bulkCreate(reviewerEntries, { transaction });
+   
+            // 6. Log the Submission action
+            await LetterActionLog.create({
+                letterId: newLetter.id,
+                userId: submitterId,
+                actionType: LetterActionType.SUBMIT,
+                comment: 'Letter submitted from template.',
+                details: {
+                    templateId: templateId,
+                    initialStatus: initialStatus,
+                    nextActionById: nextActionById,
+                    reviewerIds: reviewerUserIds,
+                    approverId: approverId
+                }
+            }, { transaction });
+   
+            // 7. Log Activity
+             await ActivityService.logActivity({
+                 userId: submitterId,
+                 action: ActivityType.SUBMIT,
+                 resourceType: ResourceType.LETTER,
+                 resourceId: newLetter.id,
+                 resourceName: newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
+                 details: `Letter submitted from template "${template.name}".`,
+                 transaction
+             });
+   
+            await transaction.commit(); // Commit the transaction
+   
+            // 8. Send Notifications (after transaction commit)
+            try {
+                const letterViewUrl = `${CLIENT_URL}/dashboard/Inbox/LetterReview/${newLetter.id}`; // URL for review page (or view page for approved)
+                const submitterName = `${submitter.firstName || ''} ${submitter.lastName || ''}`.trim() || submitter.email;
+   
+                if (nextActionById && nextActionById !== submitterId) {
+                    // Notify the first reviewer or approver
+                    const nextActionUser = await User.findByPk(nextActionById, { attributes: ['id', 'email', 'firstName', 'lastName'] });
+                    if (nextActionUser) {
+                        const nextActionUserName = `${nextActionUser.firstName || ''} ${nextActionUser.lastName || ''}`.trim() || nextActionUser.email;
+                        // Use the same email/notification service methods as the PDF flow
+                        if (nextActionUser.email) {
+                             await EmailService.sendReviewRequestEmail(
+                                 nextActionUser.email,
+                                 nextActionUserName,
+                                 submitterName,
+                                 newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
+                                 letterViewUrl
+                             );
+                        }
+                        await NotificationService.createLetterReviewRequestNotification(
+                            nextActionUser.id,
+                            newLetter.id,
+                            newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
+                            submitterName
+                        );
+                    }
+                } else if (initialStatus === LetterWorkflowStatus.APPROVED) {
+                    // If auto-approved (no workflow participants), notify the submitter
+                    // Link should be to the final approved view
+                    const finalViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${newLetter.id}`;
+                    if (submitter.email) {
+                        await EmailService.sendLetterApprovedEmail(
+                           submitter.email,
+                           submitterName,
+                           newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
+                           'System (Auto-Approved)', // Or similar indication
+                            finalViewUrl // Link to view approved letter
+                        );
+                    }
+                     await NotificationService.createLetterFinalApprovedNotification(
+                         submitter.id,
+                         newLetter.id,
+                         newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
+                         'System (Auto-Approved)'
+                     );
+                }
+   
+   
+            } catch (notificationError) {
+                console.error(`Error sending initial workflow notification for letter ${newLetter.id}:`, notificationError);
+                // Do not throw here, notifications are not critical for the core save operation
+            }
+   
+   
+            // Return the newly created letter with populated associations
+            // Use the findById method to ensure all related data is included
+            const finalLetter = await this.findById(newLetter.id, submitterId); // Pass submitterId for access check
+            if (!finalLetter) {
+                // This should ideally not happen if the transaction committed successfully
+                 throw new AppError(500, 'Failed to retrieve the newly created letter after workflow initiation.');
+            }
+   
+            return finalLetter;
+   
+        } catch (error) {
+            if (transaction) {
+                try {
+                    await transaction.rollback();
+                    console.log(`Transaction rolled back for letter creation.`);
+                } catch (rbError) {
+                    console.error('Error during transaction rollback:', rbError);
+                }
+            }
+            console.error('Error initiating template letter workflow in service:', error);
+            // Re-throw the original error (or a wrapped AppError)
+            if (error instanceof AppError) throw error;
+            throw new AppError(500, `Failed to create letter and initiate workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+     }
   static async getLettersPendingReview(userId: string): Promise<Letter[]> {
      if (!userId) { throw new AppError(401, 'User ID is required.'); }
      try {
@@ -330,6 +533,138 @@ static async finalApproveLetter(letterId: string, userId: string, comment?: stri
       if (error instanceof AppError) throw error;
       throw new AppError(500, `Failed to finally approve letter: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+static async finalApproveLetterSingle(letterId: string, userId: string, comment?: string): Promise<Letter> {
+    console.log(`[Service] Attempting final approval (single/non-PDF) for letter ${letterId} by user ${userId}`);
+
+    const transaction: Transaction = await sequelize.transaction();
+    console.log(`[Service] Transaction started for final approval (single) of letter ${letterId}`);
+    try {
+        // 1. Find and lock the letter
+        const letter = await Letter.findByPk(letterId, {
+            transaction,
+            lock: transaction.LOCK.UPDATE // Lock the row for update to prevent race conditions
+        });
+
+        if (!letter) {
+            await transaction.rollback();
+            console.error(`[Service] FinalApproveSingle Error: Letter ${letterId} not found.`);
+            throw new AppError(404, `Letter not found: ${letterId}`);
+        }
+        console.log(`[Service] Letter ${letterId} found and locked.`);
+
+        // 2. Perform Validations
+        if (letter.workflowStatus !== LetterWorkflowStatus.PENDING_APPROVAL) {
+            await transaction.rollback();
+            console.error(`[Service] FinalApproveSingle Error: Letter ${letterId} has incorrect status: ${letter.workflowStatus}`);
+            throw new AppError(400, `Letter must be in pending_approval status. Current status: ${letter.workflowStatus}`);
+        }
+        if (letter.nextActionById !== userId) {
+            await transaction.rollback();
+            console.error(`[Service] FinalApproveSingle Error: User ${userId} is not the designated approver (expected ${letter.nextActionById}) for letter ${letterId}.`);
+            throw new AppError(403, `User ${userId} is not the designated approver for this letter.`);
+        }
+        // --- PDF specific checks removed ---
+
+        console.log(`[Service] Validations passed for final approval (single) of letter ${letterId}.`);
+
+        // 3. Update Letter Record in DB
+        console.log(`[Service] Updating letter ${letterId} record in DB for final approval (single).`);
+        await letter.update({
+            workflowStatus: LetterWorkflowStatus.APPROVED,
+            nextActionById: null, // Clear the next action
+            currentStepIndex: null, // Clear the step index
+            // --- PDF/QR/Public Link fields NOT updated ---
+            // qrCodeUrl: null, // Explicitly nullify if needed, or just don't update
+            // publicLink: null,
+            // finalSignedPdfUrl: null
+        }, { transaction });
+        console.log(`[Service] Letter ${letterId} DB record updated for final approval (single).`);
+
+        // 4. Create Action Log
+        await LetterActionLog.create({
+            letterId,
+            userId,
+            actionType: LetterActionType.FINAL_APPROVE,
+            comment: comment || 'Letter finally approved.', // Use provided comment or default
+        }, { transaction });
+        console.log(`[Service] Action log created for final approval (single) of letter ${letterId}.`);
+
+        // 5. Log General Activity
+        await ActivityService.logActivity({
+            userId,
+            action: ActivityType.APPROVE, // Use general APPROVE type
+            resourceType: ResourceType.LETTER,
+            resourceId: letterId,
+            resourceName: letter.name || `Letter ${letter.id.substring(0, 6)}`, // Use letter name or fallback ID
+            details: `Letter finally approved. ${comment ? `Comment: ${comment}` : ''}`,
+            transaction // Pass transaction to activity log
+        });
+        console.log(`[Service] Activity logged for final approval (single) of letter ${letterId}.`);
+
+        // 6. Commit Transaction
+        await transaction.commit();
+        console.log(`[Service] Transaction committed successfully for final approval (single) of letter ${letterId}.`);
+
+        // --- Post-Transaction Actions (Notifications) ---
+        try {
+            console.log(`[Service] Attempting to send notifications for final approval (single) of letter ${letterId}.`);
+            const submitter = await User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName'] });
+            const approver = await User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] }); // Get approver details too
+
+            if (submitter && approver) {
+                const approverName = `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email;
+                const letterName = letter.name || `Letter ${letter.id.substring(0, 6)}`;
+                // IMPORTANT: Link to the internal view page, not a non-existent public PDF
+                const letterViewUrl = `${CLIENT_URL}/dashboard/letters/${letter.id}`; // Adjust client URL/path as needed
+
+                if (submitter.email) {
+                    await EmailService.sendLetterApprovedEmail(
+                        submitter.email,
+                        submitter.firstName || 'User',
+                        letterName,
+                        approverName,
+                        letterViewUrl // Use internal link
+                    );
+                    console.log(`[Service] Approval email sent to submitter ${submitter.email} for letter ${letterId} (single).`);
+                }
+                await NotificationService.createLetterFinalApprovedNotification(
+                    submitter.id,
+                    letterId,
+                    letterName,
+                    approverName
+                    // Add letterViewUrl here if your notification service supports it
+                );
+                console.log(`[Service] Approval notification created for submitter ${submitter.id} for letter ${letterId} (single).`);
+            } else {
+                console.warn(`[Service] Could not find full user details for final approval notification (single). Submitter found: ${!!submitter}, Approver found: ${!!approver}`);
+            }
+        } catch (notificationError) {
+            // Log notification errors but don't fail the whole operation as approval is already done
+            console.error(`[Service] Error sending final approval (single) notification for letter ${letterId}:`, notificationError);
+        }
+
+        // 7. Refetch and return the updated letter
+        console.log(`[Service] Refetching letter ${letterId} details after final approval (single).`);
+        // Assuming findById handles necessary associations
+        return await this.findById(letterId, userId); // Use existing findById or equivalent
+
+    } catch (error) {
+        console.error(`[Service] Error in finalApproveLetterSingle for letter ${letterId}:`, error);
+        // Ensure transaction is rolled back on any error
+        if (transaction) { // Check if transaction exists
+             try {
+                 await transaction.rollback();
+                 console.log(`[Service] Transaction rolled back for letter ${letterId} (single) due to error.`);
+             } catch (rbError) {
+                 console.error(`[Service] Error attempting to rollback transaction for letter ${letterId} (single):`, rbError);
+             }
+        }
+        // Re-throw the error to be caught by the controller
+        if (error instanceof AppError) throw error;
+        throw new AppError(500, `Failed to finally approve letter (single): ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
 }
 
   static async getAllByUserId(userId: string): Promise<Letter[]> {

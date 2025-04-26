@@ -30,9 +30,6 @@ interface ReassignPayload {
 }
 
 interface FinalApprovePayload {
-    // Include fields needed for final approval, e.g.,
-    // signatureUrl?: string; // Maybe passed if selected client-side
-    // stampUrl?: string;   // Maybe passed if selected client-side
     comment?: string;
 }
 
@@ -245,6 +242,35 @@ export class LetterController {
         console.error(`Error in finalApproveLetter controller for letter ${req.params.id}:`, error);
         next(error);
     }
+}
+
+static async finalApproveLetterSingle(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const userId = authenticatedReq.user?.id;
+      const letterId = req.params.id;
+      const { comment } = req.body as FinalApprovePayload; // Extract optional comment
+
+      if (!userId) {
+          // Should ideally be caught by authentication middleware, but double-check
+          return next(new AppError(401, 'Authentication required.'));
+      }
+      if (!letterId) {
+          return next(new AppError(400, 'Letter ID parameter is required.'));
+      }
+
+      console.log(`[Controller] Attempting final approval (single/non-PDF) for letter ${letterId} by user ${userId}`);
+
+      // Call the NEW service method
+      const approvedLetter = await LetterService.finalApproveLetterSingle(letterId, userId, comment);
+
+      res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
+
+  } catch (error) {
+      console.error(`[Controller] Error in finalApproveLetterSingle for letter ${req.params.id}:`, error);
+      // Pass error to the centralized error handler
+      next(error);
+  }
 }
 
   static async finalRejectLetter(req: Request, res: Response, next: NextFunction): Promise<void> {

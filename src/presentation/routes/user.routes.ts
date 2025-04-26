@@ -6,11 +6,12 @@ import { validate } from '../middlewares/validate.middleware';
 import { createUserSchema, updateUserSchema, updateProfileSchema, updatePasswordSchema } from '../validators/user.validator';
 import { AdminRole } from '../../models/admin.model';
 
+
 const router = Router();
 const twoFactorController = new TwoFactorController();
 
 // Current user routes (only require authentication)
-router.get('/me', authenticate(), UserController.getCurrentUser);
+router.get('/me', authenticate(), validate(updateProfileSchema), UserController.getCurrentUser);
 router.get('/me/checkAllTables', authenticate(), UserController.getUserWithRelatedData);
 router.put('/me', authenticate(), validate(updateProfileSchema), UserController.updateProfile);
 router.put('/me/password', authenticate(), validate(updatePasswordSchema), UserController.updatePassword);
