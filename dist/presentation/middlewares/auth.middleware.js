@@ -8,6 +8,7 @@ const user_model_1 = require("../../models/user.model");
 // In auth.middleware.ts
 const authenticate = (type) => {
     return async (req, res, next) => {
+        var _a;
         try {
             let token;
             // Check Authorization header
@@ -15,13 +16,12 @@ const authenticate = (type) => {
             if (authHeader && authHeader.startsWith('Bearer ')) {
                 token = authHeader.substring(7);
             }
-            // Fallback to cookie if no valid Authorization header
-            // if (!token) {
-            //   token = req.cookies?.access_token_w;
-            // }
             if (!token) {
-                throw new errorHandler_1.AppError(401, 'No token provided');
+                token = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a.access_token_w;
             }
+            // if (!token) {
+            //   throw new AppError(401, 'No token provided');
+            // }
             // Validate token format before verification
             if (typeof token !== 'string' || token.trim() === '') {
                 throw new errorHandler_1.AppError(401, 'Invalid token format');

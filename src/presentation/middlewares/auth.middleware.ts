@@ -36,9 +36,9 @@ export const authenticate = (type?: UserType | UserType[]) => {
         token = req.cookies?.access_token_w;
       }
 
-      if (!token) {
-        throw new AppError(401, 'No token provided');
-      }
+      // if (!token) {
+      //   throw new AppError(401, 'No token provided');
+      // }
 
       // Validate token format before verification
       if (typeof token !== 'string' || token.trim() === '') {
