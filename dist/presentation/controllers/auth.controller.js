@@ -31,7 +31,7 @@ class AuthController {
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                sameSite: 'none',
                 maxAge: 24 * 60 * 60 * 1000
             });
             res.json({
@@ -56,7 +56,7 @@ class AuthController {
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict', // Changed to strict for better security
+                sameSite: 'none', // Changed to strict for better security
                 maxAge: 24 * 60 * 60 * 1000
             });
             res.json(result);
@@ -78,7 +78,7 @@ class AuthController {
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                sameSite: 'none',
                 maxAge: 24 * 60 * 60 * 1000 // Example: 24 hours
             });
             // Optionally set new refresh token cookie if using rolling refresh tokens
@@ -117,7 +117,7 @@ class AuthController {
             res.clearCookie('access_token_w', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict'
+                sameSite: 'none'
             });
             // Optionally clear refresh token cookie if used
             // res.clearCookie('refresh_token_w', { ...cookie options });
@@ -253,7 +253,7 @@ class AuthController {
             res.cookie('access_token_w', accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                sameSite: 'none',
                 maxAge: 24 * 60 * 60 * 1000
             });
             return res.json({
@@ -285,7 +285,7 @@ class AuthController {
             res.cookie('access_token_w', accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                sameSite: 'none',
                 maxAge: 24 * 60 * 60 * 1000
             });
             return res.json({

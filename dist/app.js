@@ -65,7 +65,7 @@ app.use((0, express_session_1.default)({
         secure: config_1.config.nodeEnv === 'production',
         httpOnly: true,
         maxAge: config_1.config.session.maxAge,
-        sameSite: 'strict',
+        sameSite: 'none',
     }
 }));
 // Logging middleware

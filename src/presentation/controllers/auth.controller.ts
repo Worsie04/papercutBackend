@@ -33,7 +33,7 @@ export class AuthController {
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 24 * 60 * 60 * 1000
       });
 
@@ -60,7 +60,7 @@ export class AuthController {
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict', // Changed to strict for better security
+        sameSite: 'none', 
         maxAge: 24 * 60 * 60 * 1000
       });
 
@@ -84,7 +84,7 @@ export class AuthController {
        res.cookie('access_token_w', result.accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'strict',
+         sameSite: 'none',
          maxAge: 24 * 60 * 60 * 1000 // Example: 24 hours
        });
        // Optionally set new refresh token cookie if using rolling refresh tokens
@@ -124,7 +124,7 @@ export class AuthController {
       res.clearCookie('access_token_w', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict'
+        sameSite: 'none'
       });
       // Optionally clear refresh token cookie if used
       // res.clearCookie('refresh_token_w', { ...cookie options });
@@ -284,7 +284,7 @@ export class AuthController {
        res.cookie('access_token_w', accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'strict',
+         sameSite: 'none',
          maxAge: 24 * 60 * 60 * 1000
        });
 
@@ -323,7 +323,7 @@ export class AuthController {
        res.cookie('access_token_w', accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'strict',
+         sameSite: 'none',
          maxAge: 24 * 60 * 60 * 1000
        });
 
