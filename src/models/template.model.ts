@@ -2,17 +2,11 @@ import { DataTypes, Model, Optional } from 'sequelize';
 import { sequelize } from '../infrastructure/database/sequelize';
 import { User } from './user.model';
 
-interface TemplateSectionStructure {
-  id: string;
-  title: string;
-  content: string;
-}
-
 interface TemplateAttributes {
   id: string;
   name?: string | null;
-  sections: TemplateSectionStructure[]; // JSONB
-  userId: string; 
+  content: string; // HTML məzmunu
+  userId: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -22,12 +16,10 @@ interface TemplateCreationAttributes extends Optional<TemplateAttributes, 'id' |
 class Template extends Model<TemplateAttributes, TemplateCreationAttributes> implements TemplateAttributes {
   public id!: string;
   public name!: string | null;
-  public sections!: TemplateSectionStructure[];
+  public content!: string;
   public userId!: string;
-  public sharedUsers!: string[] | null;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
-  public readonly user?: User;
 }
 
 Template.init(
@@ -41,8 +33,8 @@ Template.init(
       type: DataTypes.STRING,
       allowNull: true,
     },
-    sections: {
-      type: DataTypes.JSONB,
+    content: {
+      type: DataTypes.TEXT, // HTML məzmunu üçün TEXT
       allowNull: false,
     },
     userId: {
@@ -63,7 +55,5 @@ Template.init(
     underscored: true,
   }
 );
-
-
 
 export default Template;

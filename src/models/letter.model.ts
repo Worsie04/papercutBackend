@@ -1,9 +1,9 @@
-import { DataTypes, Model, Optional, Sequelize, BelongsToGetAssociationMixin, HasManyGetAssociationsMixin, HasManyAddAssociationMixin, HasManyHasAssociationMixin, HasManyCountAssociationsMixin, HasManyCreateAssociationMixin } from 'sequelize';
-import { sequelize } from '../infrastructure/database/sequelize'; // Adjust import path as needed
-import { User } from './user.model'; // Adjust import path
-import Template from './template.model'; // Adjust import path
-import { LetterReviewer } from './letter-reviewer.model'; // Adjust import path
-import { LetterActionLog } from './letter-action-log.model'; // Adjust import path
+import { DataTypes, Model, Optional, Sequelize, BelongsToGetAssociationMixin, HasManyGetAssociationsMixin } from 'sequelize';
+import { sequelize } from '../infrastructure/database/sequelize';
+import { User } from './user.model';
+import Template from './template.model';
+import { LetterReviewer } from './letter-reviewer.model';
+import { LetterActionLog } from './letter-action-log.model';
 
 export interface LetterFormData {
   [key: string]: any;
@@ -17,29 +17,44 @@ export enum LetterWorkflowStatus {
   REJECTED = 'rejected'
 }
 
+export interface PlacementInfo {
+  type: 'signature' | 'stamp' | 'qrcode';
+  url?: string;
+  pageNumber: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface LetterAttributes {
   id: string;
   userId: string;
   templateId?: string | null;
-  originalPdfFileId?: string | null; // FK to files table if needed
+  originalPdfFileId?: string | null;
   name?: string | null;
   formData?: LetterFormData | null;
   logoUrl?: string | null;
   signatureUrl?: string | null;
   stampUrl?: string | null;
-  signedPdfUrl?: string | null; // Original signed PDF before final approval
+  signedPdfUrl?: string | null;
   workflowStatus: LetterWorkflowStatus;
   currentStepIndex?: number | null;
-  nextActionById?: string | null; // FK to users table
+  nextActionById?: string | null;
   qrCodeUrl?: string | null;
   publicLink?: string | null;
-  finalSignedPdfUrl?: string | null; // PDF after final approval + QR
+  finalSignedPdfUrl?: string | null;
+  placements?: PlacementInfo[] | null;
   createdAt?: Date;
   updatedAt?: Date;
-  status?: string; // Compatibility if old status field exists
+  status?: string;
 }
 
-export interface LetterCreationAttributes extends Optional<LetterAttributes, 'id' | 'createdAt' | 'updatedAt' | 'templateId' | 'originalPdfFileId' | 'name' | 'formData' | 'logoUrl' | 'signatureUrl' | 'stampUrl' | 'signedPdfUrl' | 'workflowStatus' | 'currentStepIndex' | 'nextActionById' | 'qrCodeUrl' | 'publicLink' | 'finalSignedPdfUrl' | 'status'> {}
+export interface LetterCreationAttributes extends Optional<LetterAttributes,
+  'id' | 'createdAt' | 'updatedAt' | 'templateId' | 'originalPdfFileId' | 'name' |
+  'formData' | 'logoUrl' | 'signatureUrl' | 'stampUrl' | 'signedPdfUrl' |
+  'workflowStatus' | 'currentStepIndex' | 'nextActionById' | 'qrCodeUrl' |
+  'publicLink' | 'finalSignedPdfUrl' | 'placements' | 'status'> {}
 
 export class Letter extends Model<LetterAttributes, LetterCreationAttributes> implements LetterAttributes {
   public id!: string;
@@ -58,6 +73,7 @@ export class Letter extends Model<LetterAttributes, LetterCreationAttributes> im
   public qrCodeUrl?: string | null;
   public publicLink?: string | null;
   public finalSignedPdfUrl?: string | null;
+  public placements?: PlacementInfo[] | null;
   public status?: string;
 
   public readonly createdAt!: Date;
@@ -83,7 +99,7 @@ export class Letter extends Model<LetterAttributes, LetterCreationAttributes> im
     Letter.belongsTo(models.Template, {
       foreignKey: 'templateId',
       as: 'template',
-      constraints: false // allowNull is defined in the attribute definition
+      constraints: false
     });
     Letter.belongsTo(models.User, {
         foreignKey: 'nextActionById',
@@ -98,8 +114,6 @@ export class Letter extends Model<LetterAttributes, LetterCreationAttributes> im
       foreignKey: 'letterId',
       as: 'letterActionLogs'
     });
-    // Add association to File model if needed
-    // Letter.belongsTo(models.File, { foreignKey: 'originalPdfFileId', as: 'originalFile' });
   }
 }
 
@@ -133,8 +147,6 @@ Letter.init({
      type: DataTypes.UUID,
      allowNull: true,
      field: 'original_pdf_file_id',
-     // Add FK reference if you have a 'files' table
-     // references: { model: 'files', key: 'id' }
    },
   name: {
     type: DataTypes.STRING,
@@ -160,7 +172,7 @@ Letter.init({
     allowNull: true,
     field: 'stamp_url'
   },
-   signedPdfUrl: {
+  signedPdfUrl: {
      type: DataTypes.STRING,
      allowNull: true,
      field: 'signed_pdf_url'
@@ -202,6 +214,10 @@ Letter.init({
     allowNull: true,
     field: 'final_signed_pdf_url'
   },
+  placements: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,
@@ -215,7 +231,7 @@ Letter.init({
     field: 'updated_at'
   },
   status: {
-      type: DataTypes.STRING, // Kept for potential backward compatibility if needed
+      type: DataTypes.STRING,
       allowNull: true
   },
 }, {
@@ -223,5 +239,5 @@ Letter.init({
   tableName: 'letters',
   timestamps: true,
   underscored: true,
-  paranoid: false // Set to true if you want soft deletes
+  paranoid: false
 });

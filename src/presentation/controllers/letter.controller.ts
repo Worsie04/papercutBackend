@@ -31,6 +31,7 @@ interface ReassignPayload {
 
 interface FinalApprovePayload {
     comment?: string;
+    placements: PlacementInfo[];
 }
 
 interface FinalRejectPayload {
@@ -225,7 +226,7 @@ export class LetterController {
         const authenticatedReq = req as AuthenticatedRequest; //
         const userId = authenticatedReq.user?.id;
         const letterId = req.params.id;
-        const { comment } = req.body as FinalApprovePayload; // Extract optional comment
+        const { comment,placements } = req.body as FinalApprovePayload;
 
         if (!userId) {
             return next(new AppError(401, 'Authentication required.'));
@@ -234,8 +235,14 @@ export class LetterController {
             return next(new AppError(400, 'Letter ID parameter is required.'));
         }
 
+        for (const p of placements) {
+          if (!p.type || !p.url || p.pageNumber == null || p.x == null || p.y == null || p.width == null || p.height == null) {
+               return next(new AppError(400, 'Invalid placement object structure.'));
+          }
+        }
+
         // Call the service method
-        const approvedLetter = await LetterService.finalApproveLetter(letterId, userId, comment);
+        const approvedLetter = await LetterService.finalApproveLetter(letterId, userId,placements, comment);
         res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
 
     } catch (error) {

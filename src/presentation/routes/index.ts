@@ -18,6 +18,8 @@ import templateRoutes from './template.routes';
 import letterRoutes from './letter.routes';
 import uploadRoutes from './upload.routes';
 import publicLetterRoutes from './publicLetter.routes';
+import placeholderRoutes from './placeholder.routes';
+import imageRoutes from './image.routes';
 
 const router = Router();
 
@@ -45,7 +47,8 @@ router.use(`${API_VERSION}/references`, referenceRoutes);
 router.use(`${API_VERSION}/templates`, templateRoutes);
 router.use(`${API_VERSION}/letters`, letterRoutes);
 router.use(`${API_VERSION}/uploads`, uploadRoutes);
-
+router.use(`${API_VERSION}/placeholders`, placeholderRoutes);
+router.use(`${API_VERSION}/images`, imageRoutes);
 
 // Health check endpoint
 router.get(`${API_VERSION}/health`, (req, res) => {

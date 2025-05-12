@@ -37,6 +37,7 @@ const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || '';
 const R2_PUB_URL = process.env.R2_PUB_URL;
 const APPROVER_SEQUENCE = 999;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+const QR_PLACEHOLDER_IDENTIFIER_BACKEND = 'QR_PLACEHOLDER_INTERNAL_ID';
 
 
 interface CreateLetterData {
@@ -59,6 +60,16 @@ interface PlacementInfo {
   height: number;
 }
 
+interface  PlacementInfoFinal {
+  type: 'signature' | 'stamp'  | 'qrcode';
+  url: string;
+  pageNumber: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface CreateFromPdfData {
   originalFileId: string;
   placements: PlacementInfo[];
@@ -73,230 +84,202 @@ export class LetterService {
 
     static async create(data: CreateLetterData): Promise<Letter> {
         const { templateId, userId: submitterId, formData, name, logoUrl, signatureUrl, stampUrl } = data;
-   
-        if (!templateId) { throw new AppError(400, 'Template ID is required when creating a letter from a template.'); }
-        if (!submitterId || !formData) { throw new AppError(400,'Missing required data: userId and formData are required.'); }
-   
+      
+        if (!templateId) {
+          throw new AppError(400, 'Template ID is required when creating a letter from a template.');
+        }
+        if (!submitterId || !formData) {
+          throw new AppError(400, 'Missing required data: userId and formData are required.');
+        }
+      
         const transaction = await sequelize.transaction();
         let newLetter: Letter | null = null;
-   
+      
         try {
-            // 1. Fetch Template and Owner (Approver)
-            const template = await Template.findByPk(templateId, {
-                include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }],
-                transaction // Include transaction for consistent read
+          // 1. Fetch Template and Owner (Approver)
+          const template = await Template.findByPk(templateId, {
+            include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }],
+            transaction,
+          });
+          if (!template) {
+            throw new AppError(404, `Template with ID ${templateId} not found.`);
+          }
+          const approverId = template.userId;
+
+          if (!approverId) {
+            throw new AppError(500, `Template owner user not found for template ID ${templateId}.`);
+          }
+      
+          // 2. Fetch Reviewers from TemplateReviewers table
+          const templateReviewers = await TemplateReviewerService.getReviewersForTemplate(templateId);
+          const reviewerUserIds = templateReviewers
+            .map(reviewer => reviewer.id)
+            .filter(id => id !== submitterId && id !== approverId);
+      
+          // 3. Validate Submitter exists
+          const submitter = await User.findByPk(submitterId, { attributes: ['id', 'firstName', 'lastName', 'email'], transaction });
+          if (!submitter) {
+            throw new AppError(404, `Submitter user with ID ${submitterId} not found.`);
+          }
+      
+          // Determine initial status and next action
+          let initialStatus: LetterWorkflowStatus;
+          let nextStepIndex: number | null = null;
+          let nextActionById: string | null = null;
+          const workflowParticipants: { userId: string; sequenceOrder: number }[] = [];
+      
+          if (reviewerUserIds && reviewerUserIds.length > 0) {
+            initialStatus = LetterWorkflowStatus.PENDING_REVIEW;
+            reviewerUserIds.forEach((reviewerId, index) => {
+              workflowParticipants.push({ userId: reviewerId, sequenceOrder: index + 1 });
             });
-            if (!template) {
-                throw new AppError(404,`Template with ID ${templateId} not found.`);
+            nextStepIndex = 1;
+            nextActionById = workflowParticipants[0].userId;
+          } else {
+            initialStatus = LetterWorkflowStatus.PENDING_APPROVAL;
+            nextActionById = approverId;
+          }
+      
+          if (approverId) {
+            if (!workflowParticipants.some(p => p.userId === approverId)) {
+              workflowParticipants.push({ userId: approverId, sequenceOrder: APPROVER_SEQUENCE });
             }
-            const approverId = template.userId; // Template owner is the final approver
-            const approverUser = template.user; // Already included
-            if (!approverUser) {
-                // This indicates a data inconsistency if template has userId but user record doesn't exist
-                throw new AppError(500, `Template owner user not found for template ID ${templateId}.`);
-            }
-   
-   
-            // 2. Fetch Reviewers from TemplateReviewers table
-            const templateReviewers = await TemplateReviewerService.getReviewersForTemplate(templateId);
-            // Filter out the submitter and the approver from the reviewer list
-            const reviewerUserIds = templateReviewers
-                .map(reviewer => reviewer.id)
-                .filter(id => id !== submitterId && id !== approverId);
-   
-   
-            // 3. Validate Submitter exists
-            const submitter = await User.findByPk(submitterId, { attributes: ['id', 'firstName', 'lastName', 'email'], transaction });
-            if (!submitter) {
-                // This should ideally be caught by auth middleware, but good to double-check
-                throw new AppError(404, `Submitter user with ID ${submitterId} not found.`);
-            }
-   
-   
-            // Determine initial status and next action
-            let initialStatus: LetterWorkflowStatus;
-            let nextStepIndex: number | null = null;
-            let nextActionById: string | null = null;
-            const workflowParticipants: { userId: string; sequenceOrder: number }[] = [];
-   
-            // Add reviewers first in sequence
-            if (reviewerUserIds && reviewerUserIds.length > 0) {
-                initialStatus = LetterWorkflowStatus.PENDING_REVIEW;
-                reviewerUserIds.forEach((reviewerId, index) => {
-                    workflowParticipants.push({ userId: reviewerId, sequenceOrder: index + 1 });
-                });
-                // First reviewer is the initial action taker
-                nextStepIndex = 1;
-                nextActionById = workflowParticipants[0].userId;
+          } else {
+            if (workflowParticipants.length === 0) {
+              initialStatus = LetterWorkflowStatus.APPROVED;
+              nextStepIndex = null;
+              nextActionById = null;
             } else {
-                // If no reviewers, goes directly to the approver (template owner)
-                initialStatus = LetterWorkflowStatus.PENDING_APPROVAL;
-                // nextStepIndex remains null initially, it will be set to APPROVER_SEQUENCE
-                // when the logic progresses to the approval stage
-                nextActionById = approverId;
+              throw new AppError(500, 'Template has reviewers but no designated approver (owner).');
             }
-   
-            // Add the final approver (template owner) with the distinct sequence
-            if (approverId) {
-                // Avoid adding the approver again if they were also listed as a reviewer (though filtered above)
-                 if (!workflowParticipants.some(p => p.userId === approverId)) {
-                      workflowParticipants.push({ userId: approverId, sequenceOrder: APPROVER_SEQUENCE });
-                 }
-            } else {
-                // If no approver (shouldn't happen if template has an owner)
-                // the letter is considered approved immediately if no workflow steps
-                if (workflowParticipants.length === 0) {
-                     initialStatus = LetterWorkflowStatus.APPROVED;
-                     nextStepIndex = null;
-                     nextActionById = null;
-                } else {
-                     // This case should ideally not happen: reviewers but no final approver
-                     // Handle as an error or a different workflow path if necessary
-                      throw new AppError(500, 'Template has reviewers but no designated approver (owner).');
+          }
+      
+          workflowParticipants.sort((a, b) => a.sequenceOrder - b.sequenceOrder);
+      
+          // 4. Create the Letter record
+          newLetter = await Letter.create({
+            templateId,
+            userId: submitterId,
+            formData, // FormData düzgün şəkildə saxlanılır
+            name: name ?? template.name ?? `Letter from ${template.id.substring(0, 6)}`,
+            logoUrl: logoUrl ?? null,
+            signatureUrl: signatureUrl ?? null,
+            stampUrl: stampUrl ?? null,
+            workflowStatus: initialStatus,
+            currentStepIndex: nextStepIndex,
+            nextActionById: nextActionById,
+            originalPdfFileId: null,
+            signedPdfUrl: null,
+            qrCodeUrl: null,
+            publicLink: null,
+            finalSignedPdfUrl: null,
+            placements: null, // Əgər placements istifadə olunmursa, null olaraq qalır
+          }, { transaction });
+      
+          // 5. Create LetterReviewer entries for all participants
+          const reviewerEntries = workflowParticipants.map(p => ({
+            letterId: newLetter!.id,
+            userId: p.userId,
+            sequenceOrder: p.sequenceOrder,
+            status: LetterReviewerStatus.PENDING,
+          }));
+          await LetterReviewer.bulkCreate(reviewerEntries, { transaction });
+      
+          // 6. Log the Submission action
+          await LetterActionLog.create({
+            letterId: newLetter.id,
+            userId: submitterId,
+            actionType: LetterActionType.SUBMIT,
+            comment: 'Letter submitted from template.',
+            details: {
+              templateId: templateId,
+              initialStatus: initialStatus,
+              nextActionById: nextActionById,
+              reviewerIds: reviewerUserIds,
+              approverId: approverId,
+            },
+          }, { transaction });
+      
+          // 7. Log Activity
+          await ActivityService.logActivity({
+            userId: submitterId,
+            action: ActivityType.SUBMIT,
+            resourceType: ResourceType.LETTER,
+            resourceId: newLetter.id,
+            resourceName: newLetter.name || `Letter ${newLetter.id.substring(0, 6)}`,
+            details: `Letter submitted from template "${template.name}".`,
+            transaction,
+          });
+      
+          await transaction.commit();
+      
+          // 8. Send Notifications (after transaction commit)
+          try {
+            const letterViewUrl = `${CLIENT_URL}/dashboard/Inbox/LetterReview/${newLetter.id}`;
+            const submitterName = `${submitter.firstName || ''} ${submitter.lastName || ''}`.trim() || submitter.email;
+      
+            if (nextActionById && nextActionById !== submitterId) {
+              const nextActionUser = await User.findByPk(nextActionById, { attributes: ['id', 'email', 'firstName', 'lastName'] });
+              if (nextActionUser) {
+                const nextActionUserName = `${nextActionUser.firstName || ''} ${nextActionUser.lastName || ''}`.trim() || nextActionUser.email;
+                if (nextActionUser.email) {
+                  await EmailService.sendReviewRequestEmail(
+                    nextActionUser.email,
+                    nextActionUserName,
+                    submitterName,
+                    newLetter.name || `Letter ${newLetter.id.substring(0, 6)}`,
+                    letterViewUrl,
+                  );
                 }
+                await NotificationService.createLetterReviewRequestNotification(
+                  nextActionUser.id,
+                  newLetter.id,
+                  newLetter.name || `Letter ${newLetter.id.substring(0, 6)}`,
+                  submitterName,
+                );
+              }
+            } else if (initialStatus === LetterWorkflowStatus.APPROVED) {
+              const finalViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${newLetter.id}`;
+              if (submitter.email) {
+                await EmailService.sendLetterApprovedEmail(
+                  submitter.email,
+                  submitterName,
+                  newLetter.name || `Letter ${newLetter.id.substring(0, 6)}`,
+                  'System (Auto-Approved)',
+                  finalViewUrl,
+                );
+              }
+              await NotificationService.createLetterFinalApprovedNotification(
+                submitter.id,
+                newLetter.id,
+                newLetter.name || `Letter ${newLetter.id.substring(0, 6)}`,
+                'System (Auto-Approved)',
+              );
             }
-   
-            // Sort workflow participants by sequence order
-            workflowParticipants.sort((a, b) => a.sequenceOrder - b.sequenceOrder);
-   
-   
-            // 4. Create the Letter record
-            newLetter = await Letter.create({
-                templateId,
-                userId: submitterId, // Original submitter
-                formData, // Core form data
-                name: name ?? template.name ?? `Letter from ${template.id.substring(0, 6)}`,
-                logoUrl: logoUrl ?? null,
-                signatureUrl: signatureUrl ?? null,
-                stampUrl: stampUrl ?? null,
-                workflowStatus: initialStatus,
-                currentStepIndex: nextStepIndex, // Set initial step index (1 for first reviewer, null for direct approval)
-                nextActionById: nextActionById,
-                originalPdfFileId: null, // This is for PDF upload flow
-                signedPdfUrl: null, // This will be generated after initial review/approval if needed
-                qrCodeUrl: null,
-                publicLink: null,
-                finalSignedPdfUrl: null,
-            }, { transaction });
-   
-            // 5. Create LetterReviewer entries for all participants
-            const reviewerEntries = workflowParticipants.map(p => ({
-                letterId: newLetter!.id, // Use newLetter.id (guaranteed to exist in transaction)
-                userId: p.userId,
-                sequenceOrder: p.sequenceOrder,
-                status: LetterReviewerStatus.PENDING, // All start as pending
-                // isApprover: p.isApprover // This field is not in the current model/migration
-            }));
-            await LetterReviewer.bulkCreate(reviewerEntries, { transaction });
-   
-            // 6. Log the Submission action
-            await LetterActionLog.create({
-                letterId: newLetter.id,
-                userId: submitterId,
-                actionType: LetterActionType.SUBMIT,
-                comment: 'Letter submitted from template.',
-                details: {
-                    templateId: templateId,
-                    initialStatus: initialStatus,
-                    nextActionById: nextActionById,
-                    reviewerIds: reviewerUserIds,
-                    approverId: approverId
-                }
-            }, { transaction });
-   
-            // 7. Log Activity
-             await ActivityService.logActivity({
-                 userId: submitterId,
-                 action: ActivityType.SUBMIT,
-                 resourceType: ResourceType.LETTER,
-                 resourceId: newLetter.id,
-                 resourceName: newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
-                 details: `Letter submitted from template "${template.name}".`,
-                 transaction
-             });
-   
-            await transaction.commit(); // Commit the transaction
-   
-            // 8. Send Notifications (after transaction commit)
-            try {
-                const letterViewUrl = `${CLIENT_URL}/dashboard/Inbox/LetterReview/${newLetter.id}`; // URL for review page (or view page for approved)
-                const submitterName = `${submitter.firstName || ''} ${submitter.lastName || ''}`.trim() || submitter.email;
-   
-                if (nextActionById && nextActionById !== submitterId) {
-                    // Notify the first reviewer or approver
-                    const nextActionUser = await User.findByPk(nextActionById, { attributes: ['id', 'email', 'firstName', 'lastName'] });
-                    if (nextActionUser) {
-                        const nextActionUserName = `${nextActionUser.firstName || ''} ${nextActionUser.lastName || ''}`.trim() || nextActionUser.email;
-                        // Use the same email/notification service methods as the PDF flow
-                        if (nextActionUser.email) {
-                             await EmailService.sendReviewRequestEmail(
-                                 nextActionUser.email,
-                                 nextActionUserName,
-                                 submitterName,
-                                 newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
-                                 letterViewUrl
-                             );
-                        }
-                        await NotificationService.createLetterReviewRequestNotification(
-                            nextActionUser.id,
-                            newLetter.id,
-                            newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
-                            submitterName
-                        );
-                    }
-                } else if (initialStatus === LetterWorkflowStatus.APPROVED) {
-                    // If auto-approved (no workflow participants), notify the submitter
-                    // Link should be to the final approved view
-                    const finalViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${newLetter.id}`;
-                    if (submitter.email) {
-                        await EmailService.sendLetterApprovedEmail(
-                           submitter.email,
-                           submitterName,
-                           newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
-                           'System (Auto-Approved)', // Or similar indication
-                            finalViewUrl // Link to view approved letter
-                        );
-                    }
-                     await NotificationService.createLetterFinalApprovedNotification(
-                         submitter.id,
-                         newLetter.id,
-                         newLetter.name || `Letter ${newLetter.id.substring(0,6)}`,
-                         'System (Auto-Approved)'
-                     );
-                }
-   
-   
-            } catch (notificationError) {
-                console.error(`Error sending initial workflow notification for letter ${newLetter.id}:`, notificationError);
-                // Do not throw here, notifications are not critical for the core save operation
-            }
-   
-   
-            // Return the newly created letter with populated associations
-            // Use the findById method to ensure all related data is included
-            const finalLetter = await this.findById(newLetter.id, submitterId); // Pass submitterId for access check
-            if (!finalLetter) {
-                // This should ideally not happen if the transaction committed successfully
-                 throw new AppError(500, 'Failed to retrieve the newly created letter after workflow initiation.');
-            }
-   
-            return finalLetter;
-   
+          } catch (notificationError) {
+            console.error(`Error sending initial workflow notification for letter ${newLetter.id}:`, notificationError);
+          }
+      
+          const finalLetter = await this.findById(newLetter.id, submitterId);
+          if (!finalLetter) {
+            throw new AppError(500, 'Failed to retrieve the newly created letter after workflow initiation.');
+          }
+      
+          return finalLetter;
         } catch (error) {
-            if (transaction) {
-                try {
-                    await transaction.rollback();
-                    console.log(`Transaction rolled back for letter creation.`);
-                } catch (rbError) {
-                    console.error('Error during transaction rollback:', rbError);
-                }
+          if (transaction) {
+            try {
+              await transaction.rollback();
+              console.log(`Transaction rolled back for letter creation.`);
+            } catch (rbError) {
+              console.error('Error during transaction rollback:', rbError);
             }
-            console.error('Error initiating template letter workflow in service:', error);
-            // Re-throw the original error (or a wrapped AppError)
-            if (error instanceof AppError) throw error;
-            throw new AppError(500, `Failed to create letter and initiate workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+          console.error('Error initiating template letter workflow in service:', error);
+          if (error instanceof AppError) throw error;
+          throw new AppError(500, `Failed to create letter and initiate workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-     }
+      }
   static async getLettersPendingReview(userId: string): Promise<Letter[]> {
      if (!userId) { throw new AppError(401, 'User ID is required.'); }
      try {
@@ -349,190 +332,211 @@ export class LetterService {
     }
 }
 
-static async finalApproveLetter(letterId: string, userId: string, comment?: string): Promise<Letter> {
-  console.log(`Attempting final approval for letter ${letterId} by user ${userId}`);
-  if (!R2_PUB_URL) {
-       console.error("Configuration Error: R2_PUB_URL environment variable is not set.");
-       throw new AppError(500, 'Server configuration error: R2 public URL is missing.');
-  }
+static async finalApproveLetter(letterId: string, userId: string, placements: PlacementInfoFinal[], comment?: string): Promise<Letter> {
+    if (!R2_PUB_URL) {
+        throw new AppError(500, 'Server configuration error: R2 public URL is missing.');
+    }
 
-  const transaction = await sequelize.transaction();
-  console.log(`Transaction started for letter ${letterId}`);
-  try {
-      const letter = await Letter.findByPk(letterId, { transaction, lock: transaction.LOCK.UPDATE });
-      if (!letter) {
-          await transaction.rollback();
-          console.error(`FinalApprove Error: Letter ${letterId} not found.`);
-          throw new AppError(404, `Letter not found: ${letterId}`);
-      }
-       console.log(`Letter ${letterId} found and locked.`);
-
-      if (letter.workflowStatus !== LetterWorkflowStatus.PENDING_APPROVAL) { //
-           await transaction.rollback();
-           console.error(`FinalApprove Error: Letter ${letterId} has incorrect status: ${letter.workflowStatus}`);
-           throw new AppError(400, `Letter must be in pending_approval status. Current status: ${letter.workflowStatus}`);
-      }
-      if (letter.nextActionById !== userId) {
-           await transaction.rollback();
-            console.error(`FinalApprove Error: User ${userId} is not the designated approver (expected ${letter.nextActionById}) for letter ${letterId}.`);
-           throw new AppError(403, `User ${userId} is not the designated approver for this letter.`);
-      }
-      if (!letter.signedPdfUrl) {
-          await transaction.rollback();
-           console.error(`FinalApprove Error: signedPdfUrl (intermediate key/path) is missing for letter ${letterId}.`);
-          throw new AppError(400, 'Cannot finalize approval: Intermediate Signed PDF URL (key/path) is missing.');
-      }
-       console.log(`Validations passed for letter ${letterId}. Intermediate PDF Key: ${letter.signedPdfUrl}`);
-
-      const finalPdfKey = `final-letters/letter-${letter.id}-final.pdf`;
-      console.log(`Defined final PDF key for letter ${letterId}: ${finalPdfKey}`);
-
-      const finalPdfPublicUrl = `https://${R2_PUB_URL}/${finalPdfKey}`;
-      console.log(`Constructed final public URL for letter ${letterId}: ${finalPdfPublicUrl}`);
-
-      let qrCodeBuffer: Buffer;
-      try {
-          qrCodeBuffer = await QRCode.toBuffer(finalPdfPublicUrl, {
-              errorCorrectionLevel: 'H', type: 'png', margin: 1, color: { dark: '#000000', light: '#FFFFFF' }
-          });
-          console.log(`QR Code buffer generated for letter ${letterId} using URL: ${finalPdfPublicUrl}`);
-      } catch (qrError: any) {
-            console.error(`Error generating QR Code for letter ${letterId}:`, qrError);
+    const transaction = await sequelize.transaction();
+    try {
+        const letter = await Letter.findByPk(letterId, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!letter) {
             await transaction.rollback();
-            throw new AppError(500, `Failed to generate QR code: ${qrError.message}`);
-      }
+            throw new AppError(404, `Letter not found: ${letterId}`);
+        }
 
-      const qrCodeFileName = `qr-codes/letter-${letter.id}-final-qr.png`;
-      let uploadedQrFile;
-      let qrCodeUrl: string | undefined = undefined;
-      try {
-          uploadedQrFile = await FileService.uploadBuffer(qrCodeBuffer, qrCodeFileName, 'image/png');
-          qrCodeUrl = uploadedQrFile?.url;
-           if (!qrCodeUrl) console.warn(`QR code uploaded for letter ${letterId}, but no URL returned.`);
-           else console.log(`QR Code image uploaded for letter ${letterId}. URL: ${qrCodeUrl}`);
-      } catch (uploadQrError: any) {
-          console.error(`Error uploading QR Code image for letter ${letterId}:`, uploadQrError);
-      }
-
-      let existingPdfBytes: Buffer;
-      try {
-          console.log(`Fetching INTERMEDIATE PDF buffer for key: ${letter.signedPdfUrl}`);
-          existingPdfBytes = await FileService.getFileBuffer(letter.signedPdfUrl);
-          if (!existingPdfBytes || existingPdfBytes.length === 0) throw new Error('Fetched intermediate PDF buffer is empty.');
-          console.log(`Successfully fetched intermediate PDF buffer (${existingPdfBytes.length} bytes) for key: ${letter.signedPdfUrl}`);
-      } catch (fetchPdfError: any) {
-           console.error(`Error fetching intermediate signed PDF buffer from storage for key ${letter.signedPdfUrl}:`, fetchPdfError);
-           await transaction.rollback();
-           const specificError = (fetchPdfError instanceof AppError && fetchPdfError.statusCode === 404)
-               ? `Intermediate signed PDF not found in storage (key: ${letter.signedPdfUrl})`
-               : `Could not retrieve the intermediate signed PDF (key: ${letter.signedPdfUrl}): ${fetchPdfError.message}`;
-           throw new AppError(fetchPdfError.statusCode || 500, specificError);
-      }
-
-      let finalPdfBytes: Uint8Array;
-      try {
-          console.log(`Adding QR code to intermediate PDF for letter ${letterId}`);
-          const pdfDoc = await PDFDocument.load(existingPdfBytes);
-          const qrImage = await pdfDoc.embedPng(qrCodeBuffer);
-          const pages = pdfDoc.getPages();
-          const qrSize = 50; const margin = 20;
-          for (const [index, page] of pages.entries()) {
-              const { width, height } = page.getSize();
-              page.drawImage(qrImage, { x: width - qrSize - margin, y: margin, width: qrSize, height: qrSize });
-          }
-          finalPdfBytes = await pdfDoc.save();
-          console.log(`PDF modification complete for letter ${letterId}. Final size: ${finalPdfBytes.length} bytes.`);
-      } catch (pdfModError: any) {
-            console.error(`Error modifying PDF with QR code for letter ${letterId}:`, pdfModError);
+        if (letter.workflowStatus !== LetterWorkflowStatus.PENDING_APPROVAL) {
             await transaction.rollback();
-            throw new AppError(500, `Failed to add QR code to PDF: ${pdfModError.message}`);
-      }
+            throw new AppError(400, `Letter must be in pending_approval status. Current status: ${letter.workflowStatus}`);
+        }
+        if (letter.nextActionById !== userId) {
+            await transaction.rollback();
+            throw new AppError(403, `User ${userId} is not the designated approver for this letter.`);
+        }
 
-      let uploadedFinalPdfFile;
-      try {
-           console.log(`Uploading final PDF for letter ${letterId} to PREDICTABLE key: ${finalPdfKey}`);
-          uploadedFinalPdfFile = await FileService.uploadBuffer(Buffer.from(finalPdfBytes), finalPdfKey, 'application/pdf');
-           if (!uploadedFinalPdfFile?.success) throw new Error('Final PDF upload failed or response indicates failure.');
-           console.log(`Final PDF successfully uploaded for letter ${letterId} to key: ${finalPdfKey}`);
-      } catch (uploadFinalPdfError: any) {
-           console.error(`Error uploading final PDF for letter ${letterId} to key ${finalPdfKey}:`, uploadFinalPdfError);
-           await transaction.rollback();
-           throw new AppError(500, `Failed to upload final PDF with QR code: ${uploadFinalPdfError.message}`);
-      }
+        if (!letter.signedPdfUrl) {
+            await transaction.rollback();
+            throw new AppError(400, 'Cannot finalize approval: Intermediate PDF (with signatures/stamps) is missing.');
+        }
 
-      console.log(`Updating letter ${letterId} record in DB.`);
-      await letter.update({
-           workflowStatus: LetterWorkflowStatus.APPROVED, //
-           nextActionById: null,
-           currentStepIndex: null,
-           qrCodeUrl: qrCodeUrl,
-           publicLink: finalPdfPublicUrl,
-           finalSignedPdfUrl: finalPdfKey
-      }, { transaction });
-       console.log(`Letter ${letterId} DB record updated. finalSignedPdfUrl (key) set to: ${finalPdfKey}`);
+        const intermediatePdfKey = letter.signedPdfUrl;
+        const existingPdfBytes = await FileService.getFileBuffer(intermediatePdfKey);
+        if (!existingPdfBytes || existingPdfBytes.length === 0) {
+            await transaction.rollback();
+            throw new AppError(500, 'Fetched intermediate PDF buffer is empty.');
+        }
+        const pdfDoc = await PDFDocument.load(existingPdfBytes);
+        const pages = pdfDoc.getPages();
 
-      await LetterActionLog.create({
-          letterId,
-          userId,
-          actionType: LetterActionType.FINAL_APPROVE, //
-          comment: comment || 'Letter finally approved.',
-      }, { transaction });
-       console.log(`Action log created for final approval of letter ${letterId}.`);
+        // Embed signatures and stamps from placements
+        for (const item of placements) {
+            if (item.type === 'signature' || item.type === 'stamp') {
+                if (item.pageNumber < 1 || item.pageNumber > pages.length) {
+                    console.warn(`Skipping placement: Invalid page ${item.pageNumber} for item ${item.type} in letter ${letterId}.`);
+                    continue;
+                }
+                if (!item.url) {
+                    console.warn(`Skipping image placement: URL missing for ${item.type} in letter ${letterId}`);
+                    continue;
+                }
 
-      await ActivityService.logActivity({
-           userId,
-           action: ActivityType.APPROVE, //
-           resourceType: ResourceType.LETTER, //
-           resourceId: letterId,
-           resourceName: letter.name || `Letter ${letter.id.substring(0,6)}`,
-           details: `Letter finally approved. ${comment ? `Comment: ${comment}` : ''}`,
-           transaction
-       }); //
-       console.log(`Activity logged for final approval of letter ${letterId}.`);
+                let imageBytes: Buffer | null = null;
+                try {
+                    if (item.url.startsWith('http')) {
+                        const response = await axios.get(item.url, { responseType: 'arraybuffer' });
+                        imageBytes = Buffer.from(response.data);
+                    } else {
+                        imageBytes = await FileService.getFileBuffer(item.url);
+                    }
+                } catch (fetchError: any) {
+                    console.warn(`Skipping image placement for ${item.type} due to fetch error from ${item.url}: ${fetchError.message}`);
+                    continue;
+                }
 
-      await transaction.commit();
-       console.log(`Transaction committed successfully for letter ${letterId}.`);
+                if (!imageBytes) continue;
 
-      try {
-          console.log(`Attempting to send notifications for letter ${letterId}.`);
-          const submitter = await User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName', 'lastName'] }); //
-          const approver = await User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] }); //
-          if (submitter && approver) {
-               const approverName = `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email;
-               const letterName = letter.name || `Letter ${letter.id.substring(0,6)}`;
-               const letterViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${letter.id}`;
+                let pdfImage: PDFImage | null = null;
+                try {
+                    if (item.url.toLowerCase().endsWith('.png')) {
+                        pdfImage = await pdfDoc.embedPng(imageBytes);
+                    } else if (item.url.toLowerCase().endsWith('.jpg') || item.url.toLowerCase().endsWith('.jpeg')) {
+                        pdfImage = await pdfDoc.embedJpg(imageBytes);
+                    } else {
+                        try { pdfImage = await pdfDoc.embedPng(imageBytes); }
+                        catch (e) {
+                            try { pdfImage = await pdfDoc.embedJpg(imageBytes); }
+                            catch (e2) { console.warn(`Skipping placement: Unsupported image type for ${item.type} URL ${item.url}`); continue; }
+                        }
+                    }
+                } catch (embedError: any) {
+                    console.error(`Failed to embed image ${item.url} for ${item.type}: ${embedError.message}`);
+                    continue;
+                }
 
-               if (submitter.email) {
-                   await EmailService.sendLetterApprovedEmail(submitter.email, submitter.firstName || 'User', letterName, approverName, letterViewUrl); //
-                    console.log(`Approval email sent to submitter ${submitter.email} for letter ${letterId}.`);
-               }
-               await NotificationService.createLetterFinalApprovedNotification(submitter.id, letterId, letterName, approverName); //
-                console.log(`Approval notification created for submitter ${submitter.id} for letter ${letterId}.`);
-           } else {
-              console.warn(`Could not find full user details for final approval notification. Submitter found: ${!!submitter}, Approver found: ${!!approver}`);
-           }
-      } catch (notificationError) {
-           console.error(`Error sending final approval notification for letter ${letterId}:`, notificationError);
-      }
+                if (!pdfImage) continue;
+                const page = pages[item.pageNumber - 1];
+                const { height: pageHeight } = page.getSize();
+                const pdfY = pageHeight - item.y - item.height;
+                try {
+                    page.drawImage(pdfImage, { x: item.x, y: pdfY, width: item.width, height: item.height });
+                } catch (drawError: any) {
+                    console.error(`Failed to draw ${item.type} ${item.url} on page ${item.pageNumber}: ${drawError.message}`);
+                }
+            }
+        }
 
-      console.log(`Refetching letter ${letterId} details after approval.`);
-      return await this.findById(letterId, userId);
+        // Embed QR code
+        const finalPdfKeyForQr = `final-letters/letter-${letter.id}-final-approved.pdf`;
+        const finalPdfPublicUrl = `https://${R2_PUB_URL}/${finalPdfKeyForQr}`;
+        const qrCodeBuffer = await QRCode.toBuffer(finalPdfPublicUrl, {
+            errorCorrectionLevel: 'H', type: 'png', margin: 1, color: { dark: '#000000', light: '#FFFFFF' },
+        });
+        const qrImageEmbed = await pdfDoc.embedPng(qrCodeBuffer);
 
-  } catch (error) {
-      console.error(`Error in finalApproveLetter service for letter ${letterId}:`, error);
-      if (transaction) {
-           try {
-              await transaction.rollback();
-              console.log(`Transaction rolled back for letter ${letterId} due to error.`);
-           } catch (rbError: any) {
-               if (!String(rbError.message).includes('commit') && !String(rbError.message).includes('rollback')) {
-                  console.error(`Error attempting to rollback transaction for letter ${letterId}:`, rbError);
-               }
-           }
-      }
-      if (error instanceof AppError) throw error;
-      throw new AppError(500, `Failed to finally approve letter: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
+        const qrPlacements = letter.placements?.filter(p => p.type === 'qrcode');
+        console.log(`Found ${qrPlacements?.length || 0} QR code placements for letter ${letterId}`);
+
+        if (qrPlacements && qrPlacements.length > 0) {
+            for (const qrPlace of qrPlacements) {
+                if (qrPlace.pageNumber < 1 || qrPlace.pageNumber > pages.length) {
+                    console.warn(`QR placeholder on invalid page ${qrPlace.pageNumber} for letter ${letter.id}, skipping.`);
+                    continue;
+                }
+                const page = pages[qrPlace.pageNumber - 1];
+                const { height: pageHeight } = page.getSize();
+                const qrY = pageHeight - qrPlace.y - qrPlace.height;
+                console.log(`Embedding QR code on page ${qrPlace.pageNumber} at coordinates: (${qrPlace.x}, ${qrY}), size: ${qrPlace.width}x${qrPlace.height}`);
+                page.drawImage(qrImageEmbed, {
+                    x: qrPlace.x,
+                    y: qrY,
+                    width: qrPlace.width,
+                    height: qrPlace.height,
+                });
+            }
+        } else {
+            console.warn(`No QR code placeholder found for letter ${letterId}. Placing QR at default position (last page, bottom-right).`);
+            const lastPage = pages[pages.length - 1];
+            const { width, height } = lastPage.getSize();
+            const qrSize = 50; const margin = 20;
+            lastPage.drawImage(qrImageEmbed, { x: width - qrSize - margin, y: margin, width: qrSize, height: qrSize });
+        }
+
+        const finalPdfBytesWithQr = await pdfDoc.save();
+        await FileService.uploadBuffer(Buffer.from(finalPdfBytesWithQr), finalPdfKeyForQr, 'application/pdf');
+
+        const qrCodeImageFileName = `qr-images/letter-${letter.id}-qr.png`;
+        const uploadedQrImageR2 = await FileService.uploadBuffer(qrCodeBuffer, qrCodeImageFileName, 'image/png');
+        const qrCodeImageUrl = uploadedQrImageR2?.url;
+
+        await letter.update({
+            workflowStatus: LetterWorkflowStatus.APPROVED,
+            nextActionById: null,
+            currentStepIndex: null,
+            finalSignedPdfUrl: finalPdfKeyForQr,
+            publicLink: finalPdfPublicUrl,
+            qrCodeUrl: qrCodeImageUrl,
+        }, { transaction });
+
+        await LetterActionLog.create({
+            letterId,
+            userId,
+            actionType: LetterActionType.FINAL_APPROVE,
+            comment: comment || 'Letter finally approved.',
+        }, { transaction });
+
+        await ActivityService.logActivity({
+            userId,
+            action: ActivityType.APPROVE,
+            resourceType: ResourceType.LETTER,
+            resourceId: letterId,
+            resourceName: letter.name || `Letter ${letter.id.substring(0,6)}`,
+            details: `Letter finally approved. ${comment ? `Comment: ${comment}` : ''}`,
+            transaction
+        });
+
+        await transaction.commit();
+
+        try {
+            const submitter = await User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
+            const approver = await User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] });
+            if (submitter && approver) {
+                const approverName = `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email;
+                const letterName = letter.name || `Letter ${letter.id.substring(0,6)}`;
+                const letterViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${letter.id}`;
+                if (submitter.email) {
+                    await EmailService.sendLetterApprovedEmail(submitter.email, submitter.firstName || 'User', letterName, approverName, letterViewUrl);
+                }
+                await NotificationService.createLetterFinalApprovedNotification(submitter.id, letterId, letterName, approverName);
+            }
+        } catch (notificationError) {
+            console.error(`Error sending final approval notification for letter ${letterId}:`, notificationError);
+        }
+
+        const letterForReturn = await Letter.findByPk(letterId, {
+            include: [
+                { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                { model: LetterReviewer, as: 'letterReviewers', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['sequenceOrder', 'ASC']]},
+                { model: LetterActionLog, as: 'letterActionLogs', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
+            ]
+        });
+
+        if (!letterForReturn) {
+            throw new AppError(500, `Failed to refetch letter ${letterId} after final approval.`);
+        }
+        return letterForReturn;
+
+    } catch (error) {
+        console.error(`Error in finalApproveLetter service for letter ${letterId}:`, error);
+        if (transaction) {
+            try { await transaction.rollback(); } catch (rbError: any) {
+                if (!String(rbError.message).includes('commit') && !String(rbError.message).includes('rollback')) {
+                    console.error(`Error attempting to rollback transaction for letter ${letterId}:`, rbError);
+                }
+            }
+        }
+        if (error instanceof AppError) throw error;
+        throw new AppError(500, `Failed to finally approve letter: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
 }
 
 static async finalApproveLetterSingle(letterId: string, userId: string, comment?: string): Promise<Letter> {
@@ -680,33 +684,39 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
      } catch (error) { console.error(`Error getting letters for user ${userId}:`, error); throw error; }
   }
 
-   static async findById(id: string, requestingUserId: string): Promise<Letter> {
-      if (!id || !requestingUserId) { throw new AppError(400,'Letter ID and Requesting User ID are required.'); }
-      try {
-        const letter = await Letter.findOne({
-          where: { id },
-          include: [
-            { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
-            { model: Template, as: 'template', attributes: ['id', 'name','sections'], required: false },
-            { model: LetterReviewer, as: 'letterReviewers', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }] },
-            { model: LetterActionLog, as: 'letterActionLogs', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
-          ],
-        });
-        if (!letter) { throw new AppError(404, `Letter with ID ${id} not found.`); }
-        const isCreator = letter.userId === requestingUserId;
-        let isReviewer = false;
-        const letterReviewerEntry = await LetterReviewer.findOne({ where: { letterId: id, userId: requestingUserId }});
-        isReviewer = !!letterReviewerEntry;
-
-        const isAdmin = false;
-        if (!isCreator && !isReviewer && !isAdmin && letter.workflowStatus !== LetterWorkflowStatus.APPROVED) {
-             throw new AppError(403, `Access Denied. You are not authorized to view this letter.`);
-        } else if (letter.workflowStatus === LetterWorkflowStatus.APPROVED) {
-            // Allow anyone to view approved letters if needed, or add specific logic
-        }
-        return letter;
-      } catch (error) { console.error(`Error finding letter with ID ${id} for user ${requestingUserId}:`, error); if (error instanceof AppError) throw error; throw new AppError(500, 'Could not retrieve letter due to an internal error.'); }
-   }
+  static async findById(id: string, requestingUserId: string): Promise<Letter> {
+    if (!id || !requestingUserId) {
+      throw new AppError(400, 'Letter ID and Requesting User ID are required.');
+    }
+    try {
+      const letter = await Letter.findOne({
+        where: { id },
+        include: [
+          { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+          { model: Template, as: 'template', attributes: ['id', 'name', 'content'], required: false }, // content sahəsini əlavə edin
+          { model: LetterReviewer, as: 'letterReviewers', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }] },
+          { model: LetterActionLog, as: 'letterActionLogs', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] },
+        ],
+      });
+      if (!letter) {
+        throw new AppError(404, `Letter with ID ${id} not found.`);
+      }
+      const isCreator = letter.userId === requestingUserId;
+      let isReviewer = false;
+      const letterReviewerEntry = await LetterReviewer.findOne({ where: { letterId: id, userId: requestingUserId } });
+      isReviewer = !!letterReviewerEntry;
+  
+      const isAdmin = false;
+      if (!isCreator && !isReviewer && !isAdmin && letter.workflowStatus !== LetterWorkflowStatus.APPROVED) {
+        throw new AppError(403, `Access Denied. You are not authorized to view this letter.`);
+      }
+      return letter;
+    } catch (error) {
+      console.error(`Error finding letter with ID ${id} for user ${requestingUserId}:`, error);
+      if (error instanceof AppError) throw error;
+      throw new AppError(500, 'Could not retrieve letter due to an internal error.');
+    }
+  }
 
   static async delete(id: string, userId: string): Promise<boolean> {
      if (!id || !userId) { throw new AppError(401,'Letter ID and User ID are required.'); }
@@ -723,15 +733,16 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
 
   static async createFromPdfInteractive(data: CreateFromPdfData): Promise<Letter> {
     const { originalFileId, placements, userId, reviewers, approver, name } = data;
+    let transaction: Transaction | null = null;
 
     if (!reviewers || reviewers.length === 0) {
         throw new AppError(400, 'At least one reviewer must be specified.');
     }
 
-    let transaction: Transaction | null = null;
-
     try {
-        const originalFileRecord = await File.findByPk(originalFileId);
+        transaction = await sequelize.transaction();
+
+        const originalFileRecord = await File.findByPk(originalFileId, { transaction });
         if (!originalFileRecord || !originalFileRecord.path) {
             throw new AppError(404, `Original PDF file record not found or path missing for ID: ${originalFileId}`);
         }
@@ -739,59 +750,92 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
         const originalPdfBytes = await FileService.getFileBuffer(originalPdfKey);
         const pdfDoc = await PDFDocument.load(originalPdfBytes);
         const pages = pdfDoc.getPages();
-        let placementSuccessful = false;
 
         for (const item of placements) {
-            if (item.pageNumber < 1 || item.pageNumber > pages.length) continue;
-            let imageBytes: Buffer | null = null;
-            try {
-                const response = await axios.get(item.url, { responseType: 'arraybuffer' });
-                imageBytes = Buffer.from(response.data);
-            } catch (fetchError: any) { console.warn(`Skipping placement due to image fetch error: ${item.url}`); continue; }
-            if (!imageBytes) continue;
-            let pdfImage: PDFImage | null = null;
-            try {
-                if (item.url.toLowerCase().endsWith('.png')) pdfImage = await pdfDoc.embedPng(imageBytes);
-                else if (item.url.toLowerCase().endsWith('.jpg') || item.url.toLowerCase().endsWith('.jpeg')) pdfImage = await pdfDoc.embedJpg(imageBytes);
-                else { console.warn(`Skipping placement: Unsupported image type for URL ${item.url}`); continue; }
-            } catch(embedError: any) { console.error(`Failed to embed image ${item.url}: ${embedError.message}`); continue; }
-            if (!pdfImage) continue;
-            const page = pages[item.pageNumber - 1];
-            const { width: pageWidth, height: pageHeight } = page.getSize();
-            const pdfX = item.x;
-            const pdfY = pageHeight - item.y - item.height;
-            try {
-                page.drawImage(pdfImage, { x: pdfX, y: pdfY, width: item.width, height: item.height });
-                placementSuccessful = true;
-            } catch (drawError: any) { console.error(`Failed to draw image ${item.url} on page ${item.pageNumber}: ${drawError.message}`); continue; }
+            if (item.type === 'signature' || item.type === 'stamp') {
+                if (item.pageNumber < 1 || item.pageNumber > pages.length) {
+                    console.warn(`Skipping placement: Invalid page ${item.pageNumber} for item ${item.type} in letter.`);
+                    continue;
+                }
+                if (!item.url || item.url === QR_PLACEHOLDER_IDENTIFIER_BACKEND) {
+                    console.warn(`Skipping image placement: URL missing or invalid for ${item.type}`);
+                    continue;
+                }
+
+                let imageBytes: Buffer | null = null;
+                try {
+                    if (item.url.startsWith('http')) {
+                        const response = await axios.get(item.url, { responseType: 'arraybuffer' });
+                        imageBytes = Buffer.from(response.data);
+                    } else {
+                         imageBytes = await FileService.getFileBuffer(item.url);
+                    }
+                } catch (fetchError: any) {
+                    console.warn(`Skipping image placement for ${item.type} due to fetch error from ${item.url}: ${fetchError.message}`);
+                    continue;
+                }
+
+                if (!imageBytes) continue;
+
+                let pdfImage: PDFImage | null = null;
+                try {
+                    if (item.url.toLowerCase().endsWith('.png')) {
+                         pdfImage = await pdfDoc.embedPng(imageBytes);
+                    } else if (item.url.toLowerCase().endsWith('.jpg') || item.url.toLowerCase().endsWith('.jpeg')) {
+                         pdfImage = await pdfDoc.embedJpg(imageBytes);
+                    } else {
+                         try { pdfImage = await pdfDoc.embedPng(imageBytes); }
+                         catch (e) {
+                            try { pdfImage = await pdfDoc.embedJpg(imageBytes); }
+                            catch (e2) { console.warn(`Skipping placement: Unsupported image type for ${item.type} URL ${item.url}`); continue;}
+                         }
+                    }
+                } catch (embedError: any) {
+                    console.error(`Failed to embed image ${item.url} for ${item.type}: ${embedError.message}`);
+                    continue;
+                }
+
+                if (!pdfImage) continue;
+                const page = pages[item.pageNumber - 1];
+                const { height: pageHeight } = page.getSize();
+                const pdfY = pageHeight - item.y - item.height;
+                try {
+                    page.drawImage(pdfImage, { x: item.x, y: pdfY, width: item.width, height: item.height });
+                } catch (drawError: any) {
+                    console.error(`Failed to draw ${item.type} ${item.url} on page ${item.pageNumber}: ${drawError.message}`);
+                }
+            }
         }
 
         const modifiedPdfBytes = await pdfDoc.save();
-        const originalFilenameWithoutExt = path.basename(originalFileRecord.name || 'signed-document', path.extname(originalFileRecord.name || '.pdf'));
-        const newPdfKey = `signed-letters/${originalFilenameWithoutExt}-signed-${uuidv4()}.pdf`;
-        const uploadResult = await FileService.uploadBuffer(Buffer.from(modifiedPdfBytes), newPdfKey, 'application/pdf');
-        if (!uploadResult || !(uploadResult.key || uploadResult.url)) { throw new AppError(500, `Failed to upload signed PDF to R2.`); }
-        const finalSignedPdfIdentifier = uploadResult.key || uploadResult.url;
+        const originalFilenameWithoutExt = path.basename(originalFileRecord.name || 'interactive-doc', path.extname(originalFileRecord.name || '.pdf'));
+        const intermediatePdfKey = `intermediate-signed-letters/${originalFilenameWithoutExt}-intermediate-${uuidv4()}.pdf`;
+        const uploadResult = await FileService.uploadBuffer(Buffer.from(modifiedPdfBytes), intermediatePdfKey, 'application/pdf');
 
-        transaction = await sequelize.transaction();
+        if (!uploadResult || !uploadResult.key) {
+            throw new AppError(500, 'Failed to upload intermediate signed PDF to R2.');
+        }
+        const intermediateSignedPdfIdentifier = uploadResult.key;
 
         const newLetter = await Letter.create({
             userId,
-            name: name ?? `Signed: ${originalFileRecord.name}`,
+            name: name ?? `Interactive: ${originalFileRecord.name}`,
             templateId: null,
             formData: null,
             originalPdfFileId: originalFileId,
-            signedPdfUrl: finalSignedPdfIdentifier,
+            signedPdfUrl: intermediateSignedPdfIdentifier,
+            finalSignedPdfUrl: null,
+            placements: placements,
             workflowStatus: LetterWorkflowStatus.PENDING_REVIEW,
             currentStepIndex: 1,
-            nextActionById: reviewers[0]
+            nextActionById: reviewers[0],
         }, { transaction });
 
         const reviewerEntries = reviewers.map((reviewerId, index) => ({
             letterId: newLetter.id,
             userId: reviewerId,
             sequenceOrder: index + 1,
-            status: LetterReviewerStatus.PENDING
+            status: LetterReviewerStatus.PENDING,
         }));
 
         if (approver) {
@@ -799,66 +843,72 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
                 letterId: newLetter.id,
                 userId: approver,
                 sequenceOrder: APPROVER_SEQUENCE,
-                status: LetterReviewerStatus.PENDING
+                status: LetterReviewerStatus.PENDING,
             });
         }
-
         await LetterReviewer.bulkCreate(reviewerEntries, { transaction });
 
         await LetterActionLog.create({
             letterId: newLetter.id,
             userId: userId,
             actionType: LetterActionType.SUBMIT,
-            comment: 'Letter submitted for review.',
-            details: { initialReviewerId: reviewers[0] }
+            comment: 'Letter submitted for review (interactive PDF).',
+            details: { initialReviewerId: reviewers[0], placementsCount: placements.length }
         }, { transaction });
 
         await ActivityService.logActivity({
-          userId: userId,
-          action: ActivityType.SUBMIT,
-          resourceType: ResourceType.LETTER,
-          resourceId: newLetter.id,
-          resourceName: newLetter.name || 'Signed Letter',
-          details: `Letter submitted, pending review by user ${reviewers[0]}.`,
-          transaction
+            userId: userId,
+            action: ActivityType.SUBMIT,
+            resourceType: ResourceType.LETTER,
+            resourceId: newLetter.id,
+            resourceName: newLetter.name || 'Interactive Signed Letter',
+            details: `Letter submitted from interactive PDF, pending review by user ${reviewers[0]}.`,
+            transaction
         });
 
         await transaction.commit();
 
         try {
             const firstReviewer = await User.findByPk(reviewers[0], { attributes: ['id', 'email', 'firstName', 'lastName'] });
-            const submitter = await User.findByPk(userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
+            const submitterUser = await User.findByPk(userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
 
-            if (firstReviewer && submitter) {
-                const submitterName = `${submitter.firstName || ''} ${submitter.lastName || ''}`.trim() || submitter.email;
+            if (firstReviewer && submitterUser) {
+                const submitterName = `${submitterUser.firstName || ''} ${submitterUser.lastName || ''}`.trim() || submitterUser.email;
                 const reviewerName = `${firstReviewer.firstName || ''} ${firstReviewer.lastName || ''}`.trim() || firstReviewer.email;
                 const letterViewUrl = `${CLIENT_URL}/dashboard/Inbox/LetterReview/${newLetter.id}`;
 
                 if (firstReviewer.email) {
-                     await EmailService.sendReviewRequestEmail(
-                         firstReviewer.email, reviewerName, submitterName,
-                         newLetter.name || `Letter ${newLetter.id.substring(0,6)}`, letterViewUrl
-                     );
+                    await EmailService.sendReviewRequestEmail(
+                        firstReviewer.email, reviewerName, submitterName,
+                        newLetter.name || `Letter ${newLetter.id.substring(0,6)}`, letterViewUrl
+                    );
                 }
-
-                 await NotificationService.createLetterReviewRequestNotification(
-                   firstReviewer.id, newLetter.id,
-                   newLetter.name || `Letter ${newLetter.id.substring(0,6)}`, submitterName
-                 );
+                await NotificationService.createLetterReviewRequestNotification(
+                    firstReviewer.id, newLetter.id,
+                    newLetter.name || `Letter ${newLetter.id.substring(0,6)}`, submitterName
+                );
             }
         } catch (notificationError) {
-             console.error(`Error sending initial review notification for letter ${newLetter.id}:`, notificationError);
+            console.error(`Error sending initial review notification for interactive letter ${newLetter.id}:`, notificationError);
         }
 
-        const finalLetter = await this.findById(newLetter.id, userId);
-        if (!finalLetter) { throw new AppError(500, 'Failed to refetch the newly created signed letter.'); }
-        return finalLetter;
+        const letterForReturn = await Letter.findByPk(newLetter.id, {
+            include: [
+                { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                { model: LetterReviewer, as: 'letterReviewers', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['sequenceOrder', 'ASC']]},
+                { model: LetterActionLog, as: 'letterActionLogs', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
+            ]
+        });
+         if (!letterForReturn) {
+            throw new AppError(500, 'Failed to refetch the newly created interactive signed letter with associations.');
+        }
+        return letterForReturn;
 
     } catch (error) {
         if (transaction) await transaction.rollback();
         console.error('Error in createFromPdfInteractive service:', error);
         if (error instanceof AppError) throw error;
-        throw new AppError(500, 'Failed to create signed PDF letter with workflow.');
+        throw new AppError(500, 'Failed to create interactive PDF letter with workflow.');
     }
   }
 
@@ -867,7 +917,10 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
      if (!letterId || !userId) { throw new AppError(400, 'Letter ID and User ID are required.'); }
      if (!R2_BUCKET_NAME) { throw new AppError(500, 'R2_BUCKET_NAME is not configured.'); }
      try {
-       const letter = await Letter.findOne({ where: { id: letterId }, attributes: ['signedPdfUrl','userId','workflowStatus'] }); // Fetch userId for auth check
+       const letter = await Letter.findOne({ 
+           where: { id: letterId }, 
+           attributes: ['signedPdfUrl', 'finalSignedPdfUrl', 'userId', 'workflowStatus'] 
+       }); // Fetch userId for auth check
        if (!letter) { throw new AppError(404, `Letter with ID ${letterId} not found.`); }
 
         // --- Authorization Check ---
@@ -882,9 +935,16 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
         }
         // --- End Authorization Check ---
 
-
-       if (!letter.signedPdfUrl) { throw new AppError(404, `Letter with ID ${letterId} does not have a signed PDF URL.`); }
-       const r2Key = letter.signedPdfUrl;
+       // Use finalSignedPdfUrl when available (for approved letters), otherwise use signedPdfUrl
+       const pdfUrl = letter.finalSignedPdfUrl || letter.signedPdfUrl;
+       
+       if (!pdfUrl) { 
+           throw new AppError(404, `Letter with ID ${letterId} does not have a PDF URL.`); 
+       }
+       
+       console.log(`Generating signed URL for letter ${letterId}, using key: ${pdfUrl}`);
+       
+       const r2Key = pdfUrl;
        const command = new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: r2Key, });
        const expiresInSeconds = 300;
        const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: expiresInSeconds });
@@ -1162,7 +1222,11 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
   static async finalApprove(letterId: string, userId: string, comment?: string): Promise<Letter> {
         const transaction = await sequelize.transaction();
         try {
-            const letter = await Letter.findByPk(letterId, { transaction });
+            // Make sure to include all fields when fetching the letter, especially placements
+            const letter = await Letter.findByPk(letterId, { 
+                transaction,
+                // No need for special include, placements are stored directly in the Letter model as a JSONB field
+            });
             if (!letter) throw new AppError(404, `Letter not found: ${letterId}`);
 
             if (letter.workflowStatus !== LetterWorkflowStatus.PENDING_APPROVAL) {
@@ -1186,22 +1250,58 @@ static async finalApproveLetterSingle(letterId: string, userId: string, comment?
             const pdfBytes = await FileService.getFileBuffer(pdfKey);
             const pdfDoc = await PDFDocument.load(pdfBytes);
             const pages = pdfDoc.getPages();
-            const lastPage = pages[pages.length - 1]; // Assume QR goes on last page
-
-             // Generate Public Link & QR Code
-             const publicLink = `${CLIENT_URL}/public/letters/${letter.id}`; // Example public link
-             const qrCodeDataUrl = await QRCode.toDataURL(publicLink, { errorCorrectionLevel: 'M', margin: 2, scale: 4 });
-             const qrCodeImageBytes = Buffer.from(qrCodeDataUrl.split(',')[1], 'base64');
-             const qrCodeImage = await pdfDoc.embedPng(qrCodeImageBytes);
-
-             // Embed QR Code (adjust position/size as needed)
-             const qrSize = 50;
-             lastPage.drawImage(qrCodeImage, {
-                 x: lastPage.getWidth() - qrSize - 20, // Position bottom-right
-                 y: 20,
-                 width: qrSize,
-                 height: qrSize,
-             });
+            
+            // Generate Public Link & QR Code
+            const publicLink = `${CLIENT_URL}/public/letters/${letter.id}`; // Example public link
+            const qrCodeDataUrl = await QRCode.toDataURL(publicLink, { errorCorrectionLevel: 'M', margin: 2, scale: 4 });
+            const qrCodeImageBytes = Buffer.from(qrCodeDataUrl.split(',')[1], 'base64');
+            const qrCodeImage = await pdfDoc.embedPng(qrCodeImageBytes);
+            
+            // Check if we have QR code placements defined
+            const qrPlacements = letter.placements?.filter(p => p.type === 'qrcode') || [];
+            
+            console.log(`Found ${qrPlacements.length} QR code placements for letter ${letterId}`);
+            console.log(`Letter placements data:`, JSON.stringify(letter.placements || []));
+            
+            if (qrPlacements.length > 0) {
+                // Place QR codes at each defined placement
+                for (const placement of qrPlacements) {
+                    // Page index is 0-based in PDF.js but 1-based in our data
+                    const pageIndex = placement.pageNumber - 1;
+                    if (pageIndex >= 0 && pageIndex < pages.length) {
+                        const page = pages[pageIndex];
+                        const { height: pageHeight } = page.getSize();
+                        
+                        // Convert Y coordinate (PDF origin is bottom-left, our data uses top-left)
+                        const adjustedY = pageHeight - placement.y - placement.height;
+                        
+                        console.log(`Drawing QR code on page ${pageIndex + 1} at position (${placement.x}, ${adjustedY}), size: ${placement.width}x${placement.height}`);
+                        
+                        // Draw QR code at the exact placement position with adjusted Y
+                        page.drawImage(qrCodeImage, {
+                            x: placement.x,
+                            y: adjustedY,
+                            width: placement.width,
+                            height: placement.height
+                        });
+                    } else {
+                        console.warn(`QR code placement on invalid page ${placement.pageNumber} for letter ${letterId}`);
+                    }
+                }
+            } else {
+                // Fallback: If no placements defined, put QR on the last page (bottom-right)
+                console.warn(`No QR code placements found for letter ${letterId}, using fallback position`);
+                const lastPage = pages[pages.length - 1];
+                const { width, height } = lastPage.getSize();
+                const qrSize = 50;
+                const margin = 20;
+                lastPage.drawImage(qrCodeImage, {
+                    x: width - qrSize - margin,
+                    y: margin,
+                    width: qrSize,
+                    height: qrSize,
+                });
+            }
 
              // TODO: Embed final approver's signature/stamp if needed
              // Similar logic to createFromPdfInteractive, fetching signature/stamp URLs
