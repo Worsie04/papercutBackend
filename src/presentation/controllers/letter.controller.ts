@@ -28,10 +28,24 @@ interface ReassignPayload {
     newUserId: string;
     reason?: string;
 }
+interface PlacementInfoFinal {
+  type: 'signature' | 'stamp' | 'qrcode';
+  url: string;
+  pageNumber: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  // Opsiyonel yüzde-tabanlı pozisyonlama özelliklerini ekle
+  xPct?: number;
+  yPct?: number;
+  widthPct?: number;
+  heightPct?: number;
+}
 
 interface FinalApprovePayload {
     comment?: string;
-    placements: PlacementInfo[];
+    placements: PlacementInfoFinal[];
 }
 
 interface FinalRejectPayload {
@@ -256,26 +270,31 @@ static async finalApproveLetterSingle(req: Request, res: Response, next: NextFun
       const authenticatedReq = req as AuthenticatedRequest;
       const userId = authenticatedReq.user?.id;
       const letterId = req.params.id;
-      const { comment } = req.body as FinalApprovePayload; // Extract optional comment
+      const { comment, placements } = req.body as FinalApprovePayload;
 
-      if (!userId) {
-          // Should ideally be caught by authentication middleware, but double-check
-          return next(new AppError(401, 'Authentication required.'));
-      }
-      if (!letterId) {
-          return next(new AppError(400, 'Letter ID parameter is required.'));
+      if (!userId) return next(new AppError(401, 'Authentication required.'));
+      if (!letterId) return next(new AppError(400, 'Letter ID parameter is required.'));
+      if (!placements || !Array.isArray(placements)) {
+          return next(new AppError(400, 'Placements array is required for final approval'));
       }
 
-      console.log(`[Controller] Attempting final approval (single/non-PDF) for letter ${letterId} by user ${userId}`);
-
-      // Call the NEW service method
-      const approvedLetter = await LetterService.finalApproveLetterSingle(letterId, userId, comment);
-
+      console.log("Received placements:", JSON.stringify(placements));
+        
+      // Geçerlilik kontrolü ekleyin
+      const validatedPlacements = placements.map(p => ({
+          ...p,
+          x: typeof p.x === 'number' ? p.x : 0,
+          y: typeof p.y === 'number' ? p.y : 0,
+          width: typeof p.width === 'number' ? p.width : 50,
+          height: typeof p.height === 'number' ? p.height : 50,
+          pageNumber: typeof p.pageNumber === 'number' ? p.pageNumber : 1
+      }));
+      
+      const approvedLetter = await LetterService.finalApproveLetterSingle(letterId, userId, validatedPlacements, comment);
+      
       res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
-
   } catch (error) {
       console.error(`[Controller] Error in finalApproveLetterSingle for letter ${req.params.id}:`, error);
-      // Pass error to the centralized error handler
       next(error);
   }
 }

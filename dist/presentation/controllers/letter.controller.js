@@ -274,15 +274,20 @@ class LetterController {
             const authenticatedReq = req; //
             const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
             const letterId = req.params.id;
-            const { comment } = req.body; // Extract optional comment
+            const { comment, placements } = req.body;
             if (!userId) {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
             if (!letterId) {
                 return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
             }
+            for (const p of placements) {
+                if (!p.type || !p.url || p.pageNumber == null || p.x == null || p.y == null || p.width == null || p.height == null) {
+                    return next(new errorHandler_1.AppError(400, 'Invalid placement object structure.'));
+                }
+            }
             // Call the service method
-            const approvedLetter = await letter_service_1.LetterService.finalApproveLetter(letterId, userId, comment);
+            const approvedLetter = await letter_service_1.LetterService.finalApproveLetter(letterId, userId, placements, comment);
             res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
         }
         catch (error) {

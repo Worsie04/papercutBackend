@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Letter = exports.LetterWorkflowStatus = void 0;
 const sequelize_1 = require("sequelize");
-const sequelize_2 = require("../infrastructure/database/sequelize"); // Adjust import path as needed
+const sequelize_2 = require("../infrastructure/database/sequelize");
 var LetterWorkflowStatus;
 (function (LetterWorkflowStatus) {
     LetterWorkflowStatus["DRAFT"] = "draft";
@@ -20,7 +20,7 @@ class Letter extends sequelize_1.Model {
         Letter.belongsTo(models.Template, {
             foreignKey: 'templateId',
             as: 'template',
-            constraints: false // allowNull is defined in the attribute definition
+            constraints: false
         });
         Letter.belongsTo(models.User, {
             foreignKey: 'nextActionById',
@@ -35,8 +35,6 @@ class Letter extends sequelize_1.Model {
             foreignKey: 'letterId',
             as: 'letterActionLogs'
         });
-        // Add association to File model if needed
-        // Letter.belongsTo(models.File, { foreignKey: 'originalPdfFileId', as: 'originalFile' });
     }
 }
 exports.Letter = Letter;
@@ -70,8 +68,6 @@ Letter.init({
         type: sequelize_1.DataTypes.UUID,
         allowNull: true,
         field: 'original_pdf_file_id',
-        // Add FK reference if you have a 'files' table
-        // references: { model: 'files', key: 'id' }
     },
     name: {
         type: sequelize_1.DataTypes.STRING,
@@ -139,6 +135,10 @@ Letter.init({
         allowNull: true,
         field: 'final_signed_pdf_url'
     },
+    placements: {
+        type: sequelize_1.DataTypes.JSONB,
+        allowNull: true,
+    },
     createdAt: {
         type: sequelize_1.DataTypes.DATE,
         allowNull: false,
@@ -152,7 +152,7 @@ Letter.init({
         field: 'updated_at'
     },
     status: {
-        type: sequelize_1.DataTypes.STRING, // Kept for potential backward compatibility if needed
+        type: sequelize_1.DataTypes.STRING,
         allowNull: true
     },
 }, {
@@ -160,5 +160,5 @@ Letter.init({
     tableName: 'letters',
     timestamps: true,
     underscored: true,
-    paranoid: false // Set to true if you want soft deletes
+    paranoid: false
 });

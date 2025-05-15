@@ -12,17 +12,12 @@ class TemplateController {
             if (!userId) {
                 return res.status(401).json({ error: 'İstifadəçi autentifikasiya olunmayıb.' });
             }
-            const { sections, name } = req.body;
-            if (!sections || !Array.isArray(sections)) {
-                return res.status(400).json({ error: 'Şablon bölmələri (sections) göndərilməyib və ya düzgün formatda deyil.' });
+            const { content, name } = req.body;
+            if (!content) {
+                return res.status(400).json({ error: 'Şablon məzmunu (content) göndərilməyib.' });
             }
-            const cleanedSections = sections.map(({ id, title, content }) => ({
-                id,
-                title,
-                content
-            }));
             const newTemplate = await template_service_1.TemplateService.create({
-                sections: cleanedSections,
+                content,
                 userId,
                 name
             });
@@ -74,20 +69,15 @@ class TemplateController {
             const authenticatedReq = req;
             const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
             const templateId = req.params.id;
-            const { sections, name } = req.body;
+            const { content, name } = req.body;
             if (!userId) {
                 return res.status(401).json({ error: 'İstifadəçi autentifikasiya olunmayıb.' });
             }
-            if (!sections || !Array.isArray(sections)) {
-                return res.status(400).json({ error: 'Şablon bölmələri (sections) göndərilməyib və ya düzgün formatda deyil.' });
+            if (!content) {
+                return res.status(400).json({ error: 'Şablon məzmunu (content) göndərilməyib.' });
             }
-            const cleanedSections = sections.map(({ id, title, content }) => ({
-                id,
-                title,
-                content
-            }));
             const updatedTemplate = await template_service_1.TemplateService.update(templateId, userId, {
-                sections: cleanedSections,
+                content,
                 name
             });
             if (!updatedTemplate) {

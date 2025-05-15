@@ -14,8 +14,8 @@ Template.init({
         type: sequelize_1.DataTypes.STRING,
         allowNull: true,
     },
-    sections: {
-        type: sequelize_1.DataTypes.JSONB,
+    content: {
+        type: sequelize_1.DataTypes.TEXT, // HTML məzmunu üçün TEXT
         allowNull: false,
     },
     userId: {

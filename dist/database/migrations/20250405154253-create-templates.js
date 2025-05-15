@@ -13,19 +13,19 @@ module.exports = {
                 type: Sequelize.STRING,
                 allowNull: true,
             },
-            sections: {
-                type: Sequelize.JSONB, // PostgreSQL üçün JSONB istifadə edirik
+            content: {
+                type: Sequelize.TEXT, // HTML məzmunu üçün TEXT
                 allowNull: false,
             },
             user_id: {
-                type: Sequelize.UUID, // User ID tipi ilə eyni olmalıdır
+                type: Sequelize.UUID,
                 allowNull: false,
                 references: {
-                    model: 'users', // 'users' cədvəlinin adı (modeldəki ilə eyni)
+                    model: 'users',
                     key: 'id',
                 },
                 onUpdate: 'CASCADE',
-                onDelete: 'CASCADE', // İstifadəçi silindikdə şablonlar da silinsin
+                onDelete: 'CASCADE',
             },
             created_at: {
                 allowNull: false,
@@ -38,7 +38,6 @@ module.exports = {
                 defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
             },
         });
-        // user_id üzrə indeks əlavə etmək performansı artıra bilər
         await queryInterface.addIndex('templates', ['user_id']);
     },
     async down(queryInterface, Sequelize) {

@@ -19,15 +19,11 @@ const authenticate = (type) => {
             if (!token) {
                 token = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a.access_token_w;
             }
-            // if (!token) {
-            //   throw new AppError(401, 'No token provided');
-            // }
-            // Validate token format before verification
-            if (typeof token !== 'string' || token.trim() === '') {
-                throw new errorHandler_1.AppError(401, 'Invalid token format');
+            if (!token || typeof token !== 'string' || token.trim() === '') {
+                throw new errorHandler_1.AppError(401, 'No token provided');
             }
             try {
-                const decoded = await jwt_util_1.JwtUtil.verifyToken(token.trim());
+                const decoded = jwt_util_1.JwtUtil.verifyToken(token.trim());
                 req.user = {
                     id: decoded.id,
                     email: decoded.email,
