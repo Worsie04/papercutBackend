@@ -15,7 +15,7 @@ export class UserPlaceholder extends Model {
 
   // Virtual field for placeholder (computed, not stored)
   public get placeholder(): string {
-    return `#${this.name.replace(/\s+/g, '_')}#`;
+    return `#${this.name.replace(/\s+/g, '')}#`;
   }
 
   public user?: User;

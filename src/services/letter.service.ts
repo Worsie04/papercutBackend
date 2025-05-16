@@ -546,20 +546,58 @@ static async finalApproveLetter(letterId: string, userId: string, placements: Pl
 
 static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
     try {
-      // Puppeteer'i import et - eğer yoksa
       const puppeteer = require('puppeteer');
-      
       console.log("Starting HTML to PDF conversion");
+      
+      // Metin içeriğini CSS ile güçlendirelim
+      const wrappedHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                font-size: 12pt;
+                color: #000000 !important;
+              }
+              p, div, span, h1, h2, h3, h4, h5, h6 {
+                color: #000000 !important;
+                visibility: visible !important;
+              }
+            </style>
+          </head>
+          <body>${htmlContent}</body>
+        </html>
+      `;
+      
       const browser = await puppeteer.launch({
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
         headless: 'new'
       });
       
-      console.log("Browser launched");
       const page = await browser.newPage();
-      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      await page.setContent(wrappedHtml, { 
+        waitUntil: ['networkidle0', 'load']
+      });
       
-      console.log("Converting to PDF");
+      // Type sorunu olmadan evaluate kullanalım
+      await page.evaluate(() => {
+        // @ts-ignore - DOM elements exist in browser context
+        const elements = document.querySelectorAll('*');
+        for (let i = 0; i < elements.length; i++) {
+          // @ts-ignore
+          const el = elements[i];
+          // @ts-ignore
+          if (el.style) {
+            // @ts-ignore
+            el.style.color = '#000000';
+            // @ts-ignore
+            el.style.visibility = 'visible';
+          }
+        }
+      });
+      
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
