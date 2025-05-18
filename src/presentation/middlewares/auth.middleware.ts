@@ -135,29 +135,29 @@ export const requireActive = async (
   }
 };
 
-// export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
-//   try {
-//     // Check for token in cookies or Authorization header
-//     //const token = req.cookies.access_token_w || req.headers.authorization?.split(' ')[1];
-//     const token = req.headers.authorization?.split(' ')[1];
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Check for token in cookies or Authorization header
+    //const token = req.cookies.access_token_w || req.headers.authorization?.split(' ')[1];
+    const token = req.headers.authorization?.split(' ')[1];
     
-//     if (!token) {
-//       throw new AppError(401, 'Authentication required. Please login.');
-//     }
+    if (!token) {
+      throw new AppError(401, 'Authentication required. Please login.');
+    }
 
-//     try {
-//       const decoded = await JwtUtil.verifyToken(token);
-//       req.user = decoded;
-//       next();
-//     } catch (error: any) {
-//       // Handle specific JWT errors
-//       if (error.name === 'TokenExpiredError') {
-//         throw new AppError(401, 'Your session has expired. Please login again.');
-//       } else {
-//         throw new AppError(401, 'Invalid authentication token. Please login again.');
-//       }
-//     }
-//   } catch (error) {
-//     next(error);
-//   }
-// };
+    try {
+      const decoded = await JwtUtil.verifyToken(token);
+      req.user = decoded;
+      next();
+    } catch (error: any) {
+      // Handle specific JWT errors
+      if (error.name === 'TokenExpiredError') {
+        throw new AppError(401, 'Your session has expired. Please login again.');
+      } else {
+        throw new AppError(401, 'Invalid authentication token. Please login again.');
+      }
+    }
+  } catch (error) {
+    next(error);
+  }
+};
