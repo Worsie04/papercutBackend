@@ -49,7 +49,7 @@ router.post('/reset-password', authLimiter, validate(resetPasswordSchema), AuthC
 router.post('/verify-email', validate(verifyEmailSchema), AuthController.verifyEmail);
 
 // Token verification endpoint
-router.get('/verify', authenticate(), AuthController.verifyToken);
+//router.get('/verify', authenticate(), AuthController.verifyToken);
 
 // Protected routes
 router.post(

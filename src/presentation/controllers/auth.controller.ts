@@ -1,3 +1,4 @@
+// auth.controller.ts
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../../services/auth.service';
 import { AppError } from '../middlewares/errorHandler';
@@ -6,6 +7,7 @@ import { OrganizationService } from '../../services/organization.service';
 import { EmailService } from '../../services/email.service';
 import crypto from 'crypto';
 import { OrganizationMemberService } from '../../services/organization-member.service';
+import { threadId } from 'worker_threads';
 
 export class AuthController {
 
@@ -33,7 +35,7 @@ export class AuthController {
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 24 * 60 * 60 * 1000
       });
 
@@ -44,7 +46,7 @@ export class AuthController {
       });
     } catch (error) {
       console.error('Login error:', error);
-      next(error); // Pass error to error handler middleware
+      next(error); 
     }
   };
 
@@ -60,7 +62,7 @@ export class AuthController {
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none', 
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 24 * 60 * 60 * 1000
       });
 
@@ -73,24 +75,20 @@ export class AuthController {
 
   static async refreshToken(req: Request, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body; // Assuming refresh token sent in body
-      // Or check cookies: const refreshToken = req.cookies?.refresh_token_w;
+      const { refreshToken } = req.body; 
       if (!refreshToken) {
         throw new AppError(401, 'Refresh token not provided');
       }
       const result = await AuthService.refreshToken(refreshToken);
 
-      // Set new access token cookie
        res.cookie('access_token_w', result.accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'none',
-         maxAge: 24 * 60 * 60 * 1000 // Example: 24 hours
+         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+         maxAge: 24 * 60 * 60 * 1000 
        });
-       // Optionally set new refresh token cookie if using rolling refresh tokens
-       // res.cookie('refresh_token_w', result.refreshToken, { ...cookie options });
 
-      res.json({ accessToken: result.accessToken }); // Only send necessary info back
+      res.json({ accessToken: result.accessToken }); 
     } catch (error) {
       next(error);
     }
@@ -109,8 +107,11 @@ export class AuthController {
   static async verifyToken(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) {
-        throw new AppError(401, 'Invalid token');
+        return res.status(401).json({ message: 'Authentication required' });
+
+        //throw new AppError(401, 'Invalid token');
       }
+      console.log('User verified:', req.user);
       const user = await AuthService.getUser(req.user.id, req.user.type as 'user' | 'admin');
       res.json({ user });
     } catch (error) {
@@ -120,16 +121,11 @@ export class AuthController {
 
   static async logout(req: Request, res: Response, next: NextFunction) {
     try {
-      // No need to check req.user here, just clear the cookie
       res.clearCookie('access_token_w', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none'
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
       });
-      // Optionally clear refresh token cookie if used
-      // res.clearCookie('refresh_token_w', { ...cookie options });
-
-      // Optionally, could add token invalidation logic on backend if needed (e.g., blocklist)
 
       res.status(200).json({ message: 'Logged out successfully' });
     } catch (error) {
@@ -280,17 +276,16 @@ export class AuthController {
 
       const accessToken = await AuthService.generateAccessToken(user);
 
-       // Set cookie after successful magic link verification
        res.cookie('access_token_w', accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'none',
+         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
          maxAge: 24 * 60 * 60 * 1000
        });
 
       return res.json({
         user,
-        accessToken, // Still return token for potential use, but cookie is primary
+        accessToken, 
         requiresTwoFactor,
       });
     } catch (error) {
@@ -319,11 +314,10 @@ export class AuthController {
 
       await AuthService.clearMagicLinkToken(userId);
 
-       // Set cookie after setting password
        res.cookie('access_token_w', accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'none',
+         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
          maxAge: 24 * 60 * 60 * 1000
        });
 
