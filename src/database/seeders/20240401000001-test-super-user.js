@@ -13,7 +13,7 @@ module.exports = {
     await queryInterface.bulkInsert('users', [
       {
         id: userId,
-        email: 'test@worsie.com',
+        email: 'mamedov@gmail.com',
         password: hashedPassword,
         first_name: 'Test',
         last_name: 'User',
@@ -50,7 +50,7 @@ module.exports = {
   down: async (queryInterface, Sequelize) => {
     // Find the test user
     const users = await queryInterface.sequelize.query(
-      `SELECT id FROM users WHERE email = 'test@worsie.com'`,
+      `SELECT id FROM users WHERE email = 'mamedov@gmail.com'`,
       { type: queryInterface.sequelize.QueryTypes.SELECT }
     );
 
@@ -62,7 +62,7 @@ module.exports = {
 
       // Delete the user
       await queryInterface.bulkDelete('users', {
-        email: 'test@worsie.com'
+        email: 'mamedov@gmail.com'
       });
     }
 

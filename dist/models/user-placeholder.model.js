@@ -8,7 +8,7 @@ const user_model_1 = require("./user.model");
 class UserPlaceholder extends sequelize_1.Model {
     // Virtual field for placeholder (computed, not stored)
     get placeholder() {
-        return `#${this.name.replace(/\s+/g, '_')}#`;
+        return `#${this.name.replace(/\s+/g, '')}#`;
     }
 }
 exports.UserPlaceholder = UserPlaceholder;

@@ -230,7 +230,6 @@ class LetterController {
             if (reason && typeof reason !== 'string') {
                 return next(new errorHandler_1.AppError(400, 'Invalid rejection reason format.'));
             }
-            // --- TODO: Change this to call the new rejectStep service method ---
             const updatedLetter = await letter_service_1.LetterService.rejectStep(letterId, reviewerUserId, reason);
             res.status(200).json({ message: 'Letter review rejected successfully.', letter: updatedLetter });
         }
@@ -258,10 +257,6 @@ class LetterController {
             if (reason && typeof reason !== 'string') {
                 return next(new errorHandler_1.AppError(400, 'Invalid reason format.'));
             }
-            // --- TODO: Implement LetterService.reassignStep ---
-            // const updatedLetter = await LetterService.reassignStep(letterId, currentUserId, newUserId, reason);
-            // res.status(200).json({ message: 'Letter review reassigned successfully.', letter: updatedLetter });
-            // Placeholder response until service method is implemented
             res.status(501).json({ message: 'Reassign service method not yet implemented.' });
         }
         catch (error) {
@@ -301,22 +296,21 @@ class LetterController {
             const authenticatedReq = req;
             const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
             const letterId = req.params.id;
-            const { comment } = req.body; // Extract optional comment
-            if (!userId) {
-                // Should ideally be caught by authentication middleware, but double-check
+            const { comment, placements } = req.body;
+            if (!userId)
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
-            }
-            if (!letterId) {
+            if (!letterId)
                 return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            if (!placements || !Array.isArray(placements)) {
+                return next(new errorHandler_1.AppError(400, 'Placements array is required for final approval'));
             }
-            console.log(`[Controller] Attempting final approval (single/non-PDF) for letter ${letterId} by user ${userId}`);
-            // Call the NEW service method
-            const approvedLetter = await letter_service_1.LetterService.finalApproveLetterSingle(letterId, userId, comment);
+            console.log("Received placements:", JSON.stringify(placements));
+            const validatedPlacements = placements.map(p => (Object.assign(Object.assign({}, p), { x: typeof p.x === 'number' ? p.x : 0, y: typeof p.y === 'number' ? p.y : 0, width: p.type === 'qrcode' ? 50 : (typeof p.width === 'number' ? p.width : 50), height: p.type === 'qrcode' ? 50 : (typeof p.height === 'number' ? p.height : 50), pageNumber: typeof p.pageNumber === 'number' ? p.pageNumber : 1 })));
+            const approvedLetter = await letter_service_1.LetterService.finalApproveLetterSingle(letterId, userId, validatedPlacements, comment);
             res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
         }
         catch (error) {
             console.error(`[Controller] Error in finalApproveLetterSingle for letter ${req.params.id}:`, error);
-            // Pass error to the centralized error handler
             next(error);
         }
     }

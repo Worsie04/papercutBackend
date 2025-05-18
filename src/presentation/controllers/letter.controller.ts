@@ -36,7 +36,6 @@ interface PlacementInfoFinal {
   y: number;
   width: number;
   height: number;
-  // Opsiyonel yüzde-tabanlı pozisyonlama özelliklerini ekle
   xPct?: number;
   yPct?: number;
   widthPct?: number;
@@ -203,7 +202,7 @@ export class LetterController {
        if (!reviewerUserId) { return next(new AppError(401, 'Authentication required.')); }
        if (!letterId) { return next(new AppError(400, 'Letter ID parameter is required.')); }
        if (reason && typeof reason !== 'string') { return next(new AppError(400, 'Invalid rejection reason format.')); }
-       // --- TODO: Change this to call the new rejectStep service method ---
+
        const updatedLetter = await LetterService.rejectStep(letterId, reviewerUserId, reason);
        res.status(200).json({ message: 'Letter review rejected successfully.', letter: updatedLetter });
      } catch (error) { next(error); }
@@ -223,11 +222,6 @@ export class LetterController {
           if (!newUserId || typeof newUserId !== 'string') { return next(new AppError(400, 'New User ID is required for reassignment.')); }
           if (reason && typeof reason !== 'string') { return next(new AppError(400, 'Invalid reason format.')); }
 
-          // --- TODO: Implement LetterService.reassignStep ---
-          // const updatedLetter = await LetterService.reassignStep(letterId, currentUserId, newUserId, reason);
-          // res.status(200).json({ message: 'Letter review reassigned successfully.', letter: updatedLetter });
-
-          // Placeholder response until service method is implemented
           res.status(501).json({ message: 'Reassign service method not yet implemented.' });
 
       } catch (error) {
@@ -279,19 +273,18 @@ static async finalApproveLetterSingle(req: Request, res: Response, next: NextFun
       }
 
       console.log("Received placements:", JSON.stringify(placements));
-        
-      // Geçerlilik kontrolü ekleyin
+
       const validatedPlacements = placements.map(p => ({
           ...p,
           x: typeof p.x === 'number' ? p.x : 0,
           y: typeof p.y === 'number' ? p.y : 0,
-          width: typeof p.width === 'number' ? p.width : 50,
-          height: typeof p.height === 'number' ? p.height : 50,
+          width: p.type === 'qrcode' ? 50 : (typeof p.width === 'number' ? p.width : 50), // Enforce 50 for QR code
+          height: p.type === 'qrcode' ? 50 : (typeof p.height === 'number' ? p.height : 50), // Enforce 50 for QR code
           pageNumber: typeof p.pageNumber === 'number' ? p.pageNumber : 1
       }));
-      
+
       const approvedLetter = await LetterService.finalApproveLetterSingle(letterId, userId, validatedPlacements, comment);
-      
+
       res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
   } catch (error) {
       console.error(`[Controller] Error in finalApproveLetterSingle for letter ${req.params.id}:`, error);

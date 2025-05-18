@@ -545,12 +545,11 @@ static async finalApproveLetter(letterId: string, userId: string, placements: Pl
 
 
 static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
-    try {
-      const puppeteer = require('puppeteer');
-      console.log("Starting HTML to PDF conversion");
-      
-      // Metin içeriğini CSS ile güçlendirelim
-      const wrappedHtml = `
+    const puppeteer = require('puppeteer'); // Bu sətri silin
+    console.log("Starting HTML to PDF conversion");
+
+    // Metin içeriğini CSS ile güçlendirelim
+    const wrappedHtml = `
         <!DOCTYPE html>
         <html>
           <head>
@@ -565,380 +564,398 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
                 color: #000000 !important;
                 visibility: visible !important;
               }
+              /* Əgər istifadə edirsinizsə, əlavə stilləri bura əlavə edə bilərsiniz */
+              /* Məsələn, səhifə kənarlıqları üçün */
+              /* @page { margin: 1cm; } */
             </style>
           </head>
           <body>${htmlContent}</body>
         </html>
-      `;
-      
-      const browser = await puppeteer.launch({
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        headless: 'new'
-      });
-      
-      const page = await browser.newPage();
-      await page.setContent(wrappedHtml, { 
-        waitUntil: ['networkidle0', 'load']
-      });
-      
-      // Type sorunu olmadan evaluate kullanalım
-      await page.evaluate(() => {
-        // @ts-ignore - DOM elements exist in browser context
-        const elements = document.querySelectorAll('*');
-        for (let i = 0; i < elements.length; i++) {
-          // @ts-ignore
-          const el = elements[i];
-          // @ts-ignore
-          if (el.style) {
-            // @ts-ignore
-            el.style.color = '#000000';
-            // @ts-ignore
-            el.style.visibility = 'visible';
-          }
-        }
-      });
-      
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' }
-      });
-      
-      await browser.close();
-      console.log(`PDF created successfully, size: ${pdfBuffer.length} bytes`);
-      return pdfBuffer;
+    `;
+
+    let browser; // Browser dəyişənini try blokunun xaricində təyin edin ki, finally blokunda istifadə edə biləsiniz
+    try {
+        browser = await puppeteer.launch({
+            // executablePath-ə ehtiyac yoxdur Docker konteynerində
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu', // GPU sürətləndirməsini deaktiv et
+                '--disable-dev-shm-usage' // Paylaşılan yaddaş problemləri üçün
+            ],
+            headless: 'new' // Yeni headless rejimini istifadə et
+        });
+
+        const page = await browser.newPage();
+
+        // Sayfanın default timeout-unu artıra bilərsiniz (əgər lazımdırsa)
+        // await page.setDefaultNavigationTimeout(0); // limitsiz
+
+        await page.setContent(wrappedHtml, {
+            waitUntil: ['networkidle0', 'load']
+            // networkidle2 bəzən daha stabil ola bilər: ['networkidle2', 'load']
+        });
+
+        // DOM elementlərini manipulyasiya etmək üçün evaluate
+        await page.evaluate(() => {
+            // @ts-ignore - DOM elements exist in browser context
+            const elements = document.querySelectorAll('*');
+            for (let i = 0; i < elements.length; i++) {
+              // @ts-ignore
+              const el = elements[i];
+              // @ts-ignore
+              if (el.style) {
+                // @ts-ignore
+                el.style.color = '#000000';
+                // @ts-ignore
+                el.style.visibility = 'visible';
+              }
+            }
+        });
+
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            printBackground: true, // Arxa plan rənglərini/şəkillərini çap etmək üçün
+            margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' }
+            // DisplayHeaderFooter kimi əlavə seçimlər də burada təyin edilə bilər
+        });
+
+        console.log(`PDF created successfully, size: ${pdfBuffer.length} bytes`);
+        return pdfBuffer;
     } catch (error) {
-      console.error('HTML to PDF conversion error:', error);
-      throw new Error(`HTML to PDF conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error('HTML to PDF conversion error:', error);
+        throw new Error(`HTML to PDF conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+        // Error olsa belə browseri bağlamağı təmin etmək üçün finally bloku
+        if (browser) {
+            await browser.close();
+        }
     }
-  }
+}
   
   static async finalApproveLetterSingle(letterId: string, userId: string, placements: PlacementInfoFinal[], comment?: string): Promise<Letter> {
-      if (!R2_PUB_URL) {
-          throw new AppError(500, 'Server configuration error: R2 public URL is missing.');
-      }
-  
-      const transaction = await sequelize.transaction();
-      try {
-          // 1. Find letter without lock on joins
-          const letter = await Letter.findByPk(letterId, {
-              transaction,
-              // lock kaldırıldı
-              include: [
-                  { model: Template, as: 'template', attributes: ['id', 'name', 'content'] }
-              ]
-          });
-  
-          if (!letter) {
-              await transaction.rollback();
-              throw new AppError(404, `Letter not found: ${letterId}`);
-          }
-  
-          // 2. Validate letter status and permissions
-          if (letter.workflowStatus !== LetterWorkflowStatus.PENDING_APPROVAL) {
-              await transaction.rollback();
-              throw new AppError(400, `Letter must be in pending_approval status. Current status: ${letter.workflowStatus}`);
-          }
-          if (letter.nextActionById !== userId) {
-              await transaction.rollback();
-              throw new AppError(403, `User ${userId} is not the designated approver for this letter.`);
-          }
-          if (!letter.template || !letter.template.content) {
-              await transaction.rollback();
-              throw new AppError(400, 'Cannot finalize approval: Template content is missing.');
-          }
-  
-          // 3. Generate HTML content from template and form data
-          const templateContent = letter.template.content;
-          let htmlContent = templateContent;
-          if (letter.formData) {
-              // Replace placeholders with form data values
-              htmlContent = templateContent.replace(/#([a-zA-Z0-9-]+)#/g, (match, p1) => {
-                  return letter.formData?.[p1] ?? '';
-              });
-          }
+    if (!R2_PUB_URL) {
+        throw new AppError(500, 'Server configuration error: R2 public URL is missing.');
+    }
 
-          console.log(`Converting HTML to PDF for letter ${letterId}`);
-  
-          // 4. Convert HTML to PDF
-          const pdfBuffer = await LetterService.convertHtmlToPdf(htmlContent);
-          console.log(`PDF buffer created, size: ${pdfBuffer?.length || 0} bytes`);
-        
-          if (!pdfBuffer || pdfBuffer.length === 0) {
+    const transaction = await sequelize.transaction();
+    try {
+        const letter = await Letter.findByPk(letterId, {
+            transaction,
+            include: [
+                { model: Template, as: 'template', attributes: ['id', 'name', 'content'] }
+            ]
+        });
+
+        if (!letter) {
+            await transaction.rollback();
+            throw new AppError(404, `Letter not found: ${letterId}`);
+        }
+
+        if (letter.workflowStatus !== LetterWorkflowStatus.PENDING_APPROVAL) {
+            await transaction.rollback();
+            throw new AppError(400, `Letter must be in pending_approval status. Current status: ${letter.workflowStatus}`);
+        }
+        if (letter.nextActionById !== userId) {
+            await transaction.rollback();
+            throw new AppError(403, `User ${userId} is not the designated approver for this letter.`);
+        }
+        if (!letter.template || !letter.template.content) {
+            await transaction.rollback();
+            throw new AppError(400, 'Cannot finalize approval: Template content is missing.');
+        }
+
+        const templateContent = letter.template.content;
+        let htmlContent = templateContent;
+        if (letter.formData) {
+            htmlContent = templateContent.replace(/#([a-zA-Z0-9-]+)#/g, (match, p1) => {
+                return letter.formData?.[p1] ?? '';
+            });
+        }
+
+        console.log(`Converting HTML to PDF for letter ${letterId}`);
+        const pdfBuffer = await LetterService.convertHtmlToPdf(htmlContent);
+        console.log(`PDF buffer created, size: ${pdfBuffer?.length || 0} bytes`);
+
+        if (!pdfBuffer || pdfBuffer.length === 0) {
             throw new AppError(500, "Failed to generate PDF from HTML - empty buffer returned");
         }
-        
+
         const pdfDoc = await PDFDocument.load(pdfBuffer);
         console.log(`PDF document loaded successfully`);
-        
+
         const pages = pdfDoc.getPages();
         console.log(`PDF has ${pages.length} pages`);
-        
+
         if (!pages || pages.length === 0) {
             throw new AppError(500, "PDF document has no pages");
         }
-  
-          // 5. Embed signatures and stamps from placements
-          for (const item of placements) {
-              if (item.type === 'signature' || item.type === 'stamp') {
-                  if (item.pageNumber < 1 || item.pageNumber > pages.length) {
-                      console.warn(`Skipping placement: Invalid page ${item.pageNumber} for item ${item.type} in letter ${letterId}.`);
-                      continue;
-                  }
-                  if (!item.url) {
-                      console.warn(`Skipping image placement: URL missing for ${item.type} in letter ${letterId}`);
-                      continue;
-                  }
-  
-                  let imageBytes: Buffer | null = null;
-                  try {
-                      if (item.url.startsWith('http')) {
-                          const response = await axios.get(item.url, { responseType: 'arraybuffer' });
-                          imageBytes = Buffer.from(response.data);
-                      } else {
-                          imageBytes = await FileService.getFileBuffer(item.url);
-                      }
-                  } catch (fetchError: any) {
-                      console.warn(`Skipping image placement for ${item.type} due to fetch error from ${item.url}: ${fetchError.message}`);
-                      continue;
-                  }
-  
-                  if (!imageBytes) continue;
-  
-                  let pdfImage: PDFImage | null = null;
-                  try {
-                      if (item.url.toLowerCase().endsWith('.png')) {
-                          pdfImage = await pdfDoc.embedPng(imageBytes);
-                      } else if (item.url.toLowerCase().endsWith('.jpg') || item.url.toLowerCase().endsWith('.jpeg')) {
-                          pdfImage = await pdfDoc.embedJpg(imageBytes);
-                      } else {
-                          try { pdfImage = await pdfDoc.embedPng(imageBytes); }
-                          catch (e) {
-                              try { pdfImage = await pdfDoc.embedJpg(imageBytes); }
-                              catch (e2) { console.warn(`Skipping placement: Unsupported image type for ${item.type} URL ${item.url}`); continue; }
-                          }
-                      }
-                  } catch (embedError: any) {
-                      console.error(`Failed to embed image ${item.url} for ${item.type}: ${embedError.message}`);
-                      continue;
-                  }
-  
-                  if (!pdfImage) continue;
-                  const page = pages[item.pageNumber - 1];
-                  const { height: pageHeight } = page.getSize();
-                  
-                  // Handle both absolute and percentage-based positioning
-                  let x = item.x;
-                  let y = item.y;
-                  let width = item.width;
-                  let height = item.height;
-                  
-                  if (item.xPct !== undefined && item.yPct !== undefined && 
-                      item.widthPct !== undefined && item.heightPct !== undefined) {
-                      const { width: pageWidth } = page.getSize();
-                      x = item.xPct * pageWidth;
-                      y = item.yPct * pageHeight;
-                      width = item.widthPct * pageWidth;
-                      height = item.heightPct * pageHeight;
-                  }
-                  
-                  // Convert Y coordinate from top-left to bottom-left origin
-                  const pdfY = pageHeight - y - height;
-                  
-                  try {
-                      page.drawImage(pdfImage, { 
-                          x: x, 
-                          y: pdfY, 
-                          width: width, 
-                          height: height 
-                      });
-                  } catch (drawError: any) {
-                      console.error(`Failed to draw ${item.type} ${item.url} on page ${item.pageNumber}: ${drawError.message}`);
-                  }
-              }
-          }
-  
-          // 6. Generate and embed QR code
-          const finalPdfKey = `final-letters/letter-${letter.id}-final-approved.pdf`;
-          const finalPdfPublicUrl = `https://${R2_PUB_URL}/${finalPdfKey}`;
-          const qrCodeBuffer = await QRCode.toBuffer(finalPdfPublicUrl, {
-              errorCorrectionLevel: 'H', 
-              type: 'png', 
-              margin: 1, 
-              color: { dark: '#000000', light: '#FFFFFF' },
-          });
-          const qrImageEmbed = await pdfDoc.embedPng(qrCodeBuffer);
-  
-          // 7. Place QR code
-          const qrPlacements = placements.filter(p => p.type === 'qrcode');
-          console.log(`Found ${qrPlacements.length} QR code placements for letter ${letterId}`);
-  
-            if (qrPlacements.length > 0) {
-                for (const qrPlace of qrPlacements) {
-                    // Koordinat verilerini kontrol et
-                    if (typeof qrPlace.x === 'undefined' || typeof qrPlace.y === 'undefined' || 
-                        typeof qrPlace.width === 'undefined' || typeof qrPlace.height === 'undefined') {
-                        console.warn(`QR placement missing coordinates, using default position instead`);
-                        continue;
+
+        // Embed signatures and stamps
+        for (const item of placements) {
+            if (item.type === 'signature' || item.type === 'stamp') {
+                if (item.pageNumber < 1 || item.pageNumber > pages.length) {
+                    console.warn(`Skipping placement: Invalid page ${item.pageNumber} for item ${item.type} in letter ${letterId}.`);
+                    continue;
+                }
+                if (!item.url) {
+                    console.warn(`Skipping image placement: URL missing for ${item.type} in letter ${letterId}`);
+                    continue;
+                }
+
+                let imageBytes: Buffer | null = null;
+                try {
+                    if (item.url.startsWith('http')) {
+                        const response = await axios.get(item.url, { responseType: 'arraybuffer' });
+                        imageBytes = Buffer.from(response.data);
+                    } else {
+                        imageBytes = await FileService.getFileBuffer(item.url);
                     }
-            
-                    if (qrPlace.pageNumber < 1 || qrPlace.pageNumber > pages.length) {
-                        console.warn(`QR placeholder on invalid page ${qrPlace.pageNumber} for letter ${letter.id}, skipping.`);
-                        continue;
+                } catch (fetchError: any) {
+                    console.warn(`Skipping image placement for ${item.type} due to fetch error from ${item.url}: ${fetchError.message}`);
+                    continue;
+                }
+
+                if (!imageBytes) continue;
+
+                let pdfImage: PDFImage | null = null;
+                try {
+                    if (item.url.toLowerCase().endsWith('.png')) {
+                        pdfImage = await pdfDoc.embedPng(imageBytes);
+                    } else if (item.url.toLowerCase().endsWith('.jpg') || item.url.toLowerCase().endsWith('.jpeg')) {
+                        pdfImage = await pdfDoc.embedJpg(imageBytes);
+                    } else {
+                        try { pdfImage = await pdfDoc.embedPng(imageBytes); }
+                        catch (e) {
+                            try { pdfImage = await pdfDoc.embedJpg(imageBytes); }
+                            catch (e2) { console.warn(`Skipping placement: Unsupported image type for ${item.type} URL ${item.url}`); continue; }
+                        }
                     }
-                    
-                    const page = pages[qrPlace.pageNumber - 1];
-                    if (!page) {
-                        console.warn(`Page ${qrPlace.pageNumber} is undefined`);
-                        continue;
+                } catch (embedError: any) {
+                    console.error(`Failed to embed image ${item.url} for ${item.type}: ${embedError.message}`);
+                    continue;
+                }
+
+                if (!pdfImage) continue;
+                const page = pages[item.pageNumber - 1];
+                const { height: pageHeight, width: pageWidth } = page.getSize();
+
+                let x = item.x;
+                let y = item.y;
+                let width = item.width;
+                let height = item.height;
+
+                if (item.xPct !== undefined && item.yPct !== undefined && 
+                    item.widthPct !== undefined && item.heightPct !== undefined) {
+                    x = item.xPct * pageWidth;
+                    y = item.yPct * pageHeight;
+                    width = item.widthPct * pageWidth;
+                    height = item.heightPct * pageHeight;
+                }
+
+                // Preserve aspect ratio for stamps
+                if (item.type === 'stamp') {
+                    const originalWidth = pdfImage.width;
+                    const originalHeight = pdfImage.height;
+                    const aspectRatio = originalWidth / originalHeight;
+
+                    // Adjust dimensions to maintain aspect ratio
+                    // Use the provided width as the base, and calculate height
+                    const targetWidth = width;
+                    const targetHeight = targetWidth / aspectRatio;
+
+                    // If the calculated height exceeds the provided height, adjust width instead
+                    if (targetHeight > height) {
+                        height = height; // Use the provided height as the limit
+                        width = height * aspectRatio; // Recalculate width to maintain aspect ratio
+                    } else {
+                        width = targetWidth;
+                        height = targetHeight;
                     }
-                    
-                    const pageSize = page.getSize();
-                    const { height: pageHeight, width: pageWidth } = pageSize;
-                  
-                  // Handle both absolute and percentage-based positioning
-                  let x = qrPlace.x;
-                  let y = qrPlace.y;
-                  let width = qrPlace.width;
-                  let height = qrPlace.height;
-                  
-                  if (qrPlace.xPct !== undefined && qrPlace.yPct !== undefined && 
-                      qrPlace.widthPct !== undefined && qrPlace.heightPct !== undefined) {
-                      x = qrPlace.xPct * pageWidth;
-                      y = qrPlace.yPct * pageHeight;
-                      width = qrPlace.widthPct * pageWidth;
-                      height = qrPlace.heightPct * pageHeight;
-                  }
-                  
-                  // Convert Y coordinate from top-left to bottom-left origin
-                  const qrY = pageHeight - y - height;
-                  
-                  console.log(`Embedding QR code on page ${qrPlace.pageNumber} at coordinates: (${x}, ${qrY}), size: ${width}x${height}`);
-                  
-                  page.drawImage(qrImageEmbed, {
-                      x: x,
-                      y: qrY,
-                      width: width,
-                      height: height,
-                  });
-              }
-          } else {
-              console.warn(`No QR code placeholder found for letter ${letterId}. Placing QR at default position (last page, bottom-right).`);
-              const lastPage = pages[pages.length - 1];
-              const { width, height } = lastPage.getSize();
-              const qrSize = 50; 
-              const margin = 20;
-              lastPage.drawImage(qrImageEmbed, { 
-                  x: width - qrSize - margin, 
-                  y: margin, 
-                  width: qrSize, 
-                  height: qrSize 
-              });
-          }
-  
-          // 8. Save final PDF and QR image
-          const finalPdfBytes = await pdfDoc.save();
-          await FileService.uploadBuffer(Buffer.from(finalPdfBytes), finalPdfKey, 'application/pdf');
-  
-          const qrCodeImageFileName = `qr-images/letter-${letter.id}-qr.png`;
-          const uploadedQrImageR2 = await FileService.uploadBuffer(qrCodeBuffer, qrCodeImageFileName, 'image/png');
-          const qrCodeImageUrl = uploadedQrImageR2?.url;
-  
-          // 9. Update letter record
-          await letter.update({
-              workflowStatus: LetterWorkflowStatus.APPROVED,
-              nextActionById: null,
-              currentStepIndex: null,
-              finalSignedPdfUrl: finalPdfKey,
-              publicLink: finalPdfPublicUrl,
-              qrCodeUrl: qrCodeImageUrl,
-              placements: placements, // Save placements for future reference
-          }, { transaction });
-  
-          // 10. Add action log
-          await LetterActionLog.create({
-              letterId,
-              userId,
-              actionType: LetterActionType.FINAL_APPROVE,
-              comment: comment || 'Letter finally approved.',
-          }, { transaction });
-  
-          // 11. Log activity
-          await ActivityService.logActivity({
-              userId,
-              action: ActivityType.APPROVE,
-              resourceType: ResourceType.LETTER,
-              resourceId: letterId,
-              resourceName: letter.name || `Letter ${letter.id.substring(0, 6)}`,
-              details: `Letter finally approved. ${comment ? `Comment: ${comment}` : ''}`,
-              transaction
-          });
-  
-          // 12. Commit transaction
-          await transaction.commit();
-  
-          // 13. Send notifications (after transaction commit)
-          try {
-              const submitter = await User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
-              const approver = await User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] });
-              
-              if (submitter && approver) {
-                  const approverName = `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email;
-                  const letterName = letter.name || `Letter ${letter.id.substring(0, 6)}`;
-                  const letterViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${letter.id}`;
-                  
-                  if (submitter.email) {
-                      await EmailService.sendLetterApprovedEmail(
-                          submitter.email,
-                          submitter.firstName || 'User',
-                          letterName,
-                          approverName,
-                          letterViewUrl
-                      );
-                  }
-                  
-                  await NotificationService.createLetterFinalApprovedNotification(
-                      submitter.id,
-                      letterId,
-                      letterName,
-                      approverName
-                  );
-              }
-          } catch (notificationError) {
-              console.error(`Error sending final approval notification for letter ${letterId}:`, notificationError);
-          }
-  
-          // 14. Return updated letter
-          const result = await Letter.findByPk(letterId, {
-              include: [
-                  { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
-                  { model: LetterReviewer, as: 'letterReviewers', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['sequenceOrder', 'ASC']] },
-                  { model: LetterActionLog, as: 'letterActionLogs', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
-              ]
-          });
-          
-          if (!result) {
-              throw new AppError(404, `Letter with ID ${letterId} not found after final approval.`);
-          }
-          
-          return result;
-  
-      } catch (error) {
-          console.error(`Error in finalApproveLetterSingle for letter ${letterId}:`, error);
-          
-          if (transaction) {
-              try { 
-                  await transaction.rollback(); 
-                  console.log(`Transaction rolled back for letter ${letterId} due to error.`);
-              } catch (rbError: any) {
-                  console.error(`Error rolling back transaction for letter ${letterId}:`, rbError);
-              }
-          }
-          
-          if (error instanceof AppError) throw error;
-          throw new AppError(500, `Failed to finally approve template letter: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-  }
+
+                    console.log(`Adjusted stamp dimensions for letter ${letterId}: original=${originalWidth}x${originalHeight}, target=${width}x${height}`);
+                }
+
+                const pdfY = pageHeight - y - height;
+                try {
+                    page.drawImage(pdfImage, { 
+                        x: x, 
+                        y: pdfY, 
+                        width: width, 
+                        height: height 
+                    });
+                } catch (drawError: any) {
+                    console.error(`Failed to draw ${item.type} ${item.url} on page ${item.pageNumber}: ${drawError.message}`);
+                }
+            }
+        }
+
+        // Generate and embed QR code (unchanged from previous fix)
+        const finalPdfKey = `final-letters/letter-${letter.id}-final-approved.pdf`;
+        const finalPdfPublicUrl = `https://${R2_PUB_URL}/${finalPdfKey}`;
+        const qrCodeBuffer = await QRCode.toBuffer(finalPdfPublicUrl, {
+            errorCorrectionLevel: 'H', 
+            type: 'png', 
+            margin: 1, 
+            color: { dark: '#000000', light: '#FFFFFF' },
+        });
+        const qrImageEmbed = await pdfDoc.embedPng(qrCodeBuffer);
+
+        const qrPlacements = placements.filter(p => p.type === 'qrcode');
+        console.log(`Found ${qrPlacements.length} QR code placements for letter ${letterId}`);
+
+        if (qrPlacements.length > 0) {
+            for (const qrPlace of qrPlacements) {
+                if (typeof qrPlace.x === 'undefined' || typeof qrPlace.y === 'undefined' || 
+                    typeof qrPlace.width === 'undefined' || typeof qrPlace.height === 'undefined') {
+                    console.warn(`QR placement missing coordinates, using default position instead`);
+                    continue;
+                }
+
+                if (qrPlace.pageNumber < 1 || qrPlace.pageNumber > pages.length) {
+                    console.warn(`QR placeholder on invalid page ${qrPlace.pageNumber} for letter ${letter.id}, skipping.`);
+                    continue;
+                }
+
+                const page = pages[qrPlace.pageNumber - 1];
+                if (!page) {
+                    console.warn(`Page ${qrPlace.pageNumber} is undefined`);
+                    continue;
+                }
+
+                const pageSize = page.getSize();
+                const { height: pageHeight, width: pageWidth } = pageSize;
+
+                let x = qrPlace.x;
+                let y = qrPlace.y;
+                let width = 50;
+                let height = 50;
+
+                if (qrPlace.xPct !== undefined && qrPlace.yPct !== undefined) {
+                    x = qrPlace.xPct * pageWidth;
+                    y = qrPlace.yPct * pageHeight;
+                }
+
+                const qrY = pageHeight - y - height;
+                console.log(`Embedding QR code on page ${qrPlace.pageNumber} at coordinates: (${x}, ${qrY}), size: ${width}x${height}`);
+
+                page.drawImage(qrImageEmbed, {
+                    x: x,
+                    y: qrY,
+                    width: width,
+                    height: height,
+                });
+            }
+        } else {
+            console.warn(`No QR code placeholder found for letter ${letterId}. Placing QR at default position (last page, bottom-right).`);
+            const lastPage = pages[pages.length - 1];
+            const { width, height } = lastPage.getSize();
+            const qrSize = 50;
+            const margin = 20;
+            lastPage.drawImage(qrImageEmbed, { 
+                x: width - qrSize - margin, 
+                y: margin, 
+                width: qrSize, 
+                height: qrSize 
+            });
+        }
+
+        const finalPdfBytes = await pdfDoc.save();
+        await FileService.uploadBuffer(Buffer.from(finalPdfBytes), finalPdfKey, 'application/pdf');
+
+        const qrCodeImageFileName = `qr-images/letter-${letter.id}-qr.png`;
+        const uploadedQrImageR2 = await FileService.uploadBuffer(qrCodeBuffer, qrCodeImageFileName, 'image/png');
+        const qrCodeImageUrl = uploadedQrImageR2?.url;
+
+        await letter.update({
+            workflowStatus: LetterWorkflowStatus.APPROVED,
+            nextActionById: null,
+            currentStepIndex: null,
+            finalSignedPdfUrl: finalPdfKey,
+            publicLink: finalPdfPublicUrl,
+            qrCodeUrl: qrCodeImageUrl,
+            placements: placements,
+        }, { transaction });
+
+        await LetterActionLog.create({
+            letterId,
+            userId,
+            actionType: LetterActionType.FINAL_APPROVE,
+            comment: comment || 'Letter finally approved.',
+        }, { transaction });
+
+        await ActivityService.logActivity({
+            userId,
+            action: ActivityType.APPROVE,
+            resourceType: ResourceType.LETTER,
+            resourceId: letterId,
+            resourceName: letter.name || `Letter ${letter.id.substring(0, 6)}`,
+            details: `Letter finally approved. ${comment ? `Comment: ${comment}` : ''}`,
+            transaction
+        });
+
+        await transaction.commit();
+
+        try {
+            const submitter = await User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
+            const approver = await User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] });
+
+            if (submitter && approver) {
+                const approverName = `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email;
+                const letterName = letter.name || `Letter ${letter.id.substring(0, 6)}`;
+                const letterViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${letter.id}`;
+
+                if (submitter.email) {
+                    await EmailService.sendLetterApprovedEmail(
+                        submitter.email,
+                        submitter.firstName || 'User',
+                        letterName,
+                        approverName,
+                        letterViewUrl
+                    );
+                }
+
+                await NotificationService.createLetterFinalApprovedNotification(
+                    submitter.id,
+                    letterId,
+                    letterName,
+                    approverName
+                );
+            }
+        } catch (notificationError) {
+            console.error(`Error sending final approval notification for letter ${letterId}:`, notificationError);
+        }
+
+        const result = await Letter.findByPk(letterId, {
+            include: [
+                { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                { model: LetterReviewer, as: 'letterReviewers', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['sequenceOrder', 'ASC']] },
+                { model: LetterActionLog, as: 'letterActionLogs', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
+            ]
+        });
+
+        if (!result) {
+            throw new AppError(404, `Letter with ID ${letterId} not found after final approval.`);
+        }
+
+        return result;
+
+    } catch (error) {
+        console.error(`Error in finalApproveLetterSingle for letter ${letterId}:`, error);
+
+        if (transaction) {
+            try { 
+                await transaction.rollback(); 
+                console.log(`Transaction rolled back for letter ${letterId} due to error.`);
+            } catch (rbError: any) {
+                console.error(`Error rolling back transaction for letter ${letterId}:`, rbError);
+            }
+        }
+
+        if (error instanceof AppError) throw error;
+        throw new AppError(500, `Failed to finally approve template letter: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+}
 
   static async getAllByUserId(userId: string): Promise<Letter[]> {
      if (!userId) { throw new AppError(401,'User ID is required.'); }

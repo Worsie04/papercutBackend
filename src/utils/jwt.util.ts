@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { config } from '../config';
 
 export interface TokenPayload {
@@ -13,17 +13,16 @@ export class JwtUtil {
   private static readonly EXPIRES_IN = config.jwt.expiresIn;
 
   static generateToken(payload: TokenPayload): string {
-    // console.log('Generating token with expiresIn:', this.EXPIRES_IN);
-    // console.log('Using JWT Secret:', this.SECRET);
-    return jwt.sign(payload, this.SECRET, {
-      expiresIn: this.EXPIRES_IN,
-    });
+    return jwt.sign(
+      payload as any, 
+      this.SECRET as string, 
+      { expiresIn: this.EXPIRES_IN } as SignOptions
+    );
   }
 
   static verifyToken(token: string): TokenPayload {
-    //console.log('Using JWT VERİFY Secret :', this.SECRET);
     try {
-      return jwt.verify(token, this.SECRET) as TokenPayload;
+      return jwt.verify(token, this.SECRET as string) as TokenPayload;
     } catch (error: any) {
       // Provide more specific error messages based on the type of error
       if (error.name === 'TokenExpiredError') {
@@ -45,8 +44,10 @@ export class JwtUtil {
   }
 
   static generateRefreshToken(userId: string, type: 'user' | 'admin'): string {
-    return jwt.sign({ id: userId, type }, this.SECRET, {
-      expiresIn: '7d',
-    });
+    return jwt.sign(
+      { id: userId, type } as any, 
+      this.SECRET as string, 
+      { expiresIn: '7d' } as SignOptions
+    );
   }
 }

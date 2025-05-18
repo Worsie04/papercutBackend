@@ -471,118 +471,373 @@ class LetterService {
             throw new errorHandler_1.AppError(500, `Failed to finally approve letter: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
-    static async finalApproveLetterSingle(letterId, userId, comment) {
-        console.log(`[Service] Attempting final approval (single/non-PDF) for letter ${letterId} by user ${userId}`);
-        const transaction = await sequelize_2.sequelize.transaction();
-        console.log(`[Service] Transaction started for final approval (single) of letter ${letterId}`);
+    static async convertHtmlToPdf(htmlContent) {
+        const puppeteer = require('puppeteer'); // Bu sətri silin
+        console.log("Starting HTML to PDF conversion");
+        // Metin içeriğini CSS ile güçlendirelim
+        const wrappedHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              body {
+                font-family: Arial, sans-serif;
+                font-size: 12pt;
+                color: #000000 !important;
+              }
+              p, div, span, h1, h2, h3, h4, h5, h6 {
+                color: #000000 !important;
+                visibility: visible !important;
+              }
+              /* Əgər istifadə edirsinizsə, əlavə stilləri bura əlavə edə bilərsiniz */
+              /* Məsələn, səhifə kənarlıqları üçün */
+              /* @page { margin: 1cm; } */
+            </style>
+          </head>
+          <body>${htmlContent}</body>
+        </html>
+    `;
+        let browser; // Browser dəyişənini try blokunun xaricində təyin edin ki, finally blokunda istifadə edə biləsiniz
         try {
-            // 1. Find and lock the letter
+            browser = await puppeteer.launch({
+                // executablePath-ə ehtiyac yoxdur Docker konteynerində
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-gpu', // GPU sürətləndirməsini deaktiv et
+                    '--disable-dev-shm-usage' // Paylaşılan yaddaş problemləri üçün
+                ],
+                headless: 'new' // Yeni headless rejimini istifadə et
+            });
+            const page = await browser.newPage();
+            // Sayfanın default timeout-unu artıra bilərsiniz (əgər lazımdırsa)
+            // await page.setDefaultNavigationTimeout(0); // limitsiz
+            await page.setContent(wrappedHtml, {
+                waitUntil: ['networkidle0', 'load']
+                // networkidle2 bəzən daha stabil ola bilər: ['networkidle2', 'load']
+            });
+            // DOM elementlərini manipulyasiya etmək üçün evaluate
+            await page.evaluate(() => {
+                // @ts-ignore - DOM elements exist in browser context
+                const elements = document.querySelectorAll('*');
+                for (let i = 0; i < elements.length; i++) {
+                    // @ts-ignore
+                    const el = elements[i];
+                    // @ts-ignore
+                    if (el.style) {
+                        // @ts-ignore
+                        el.style.color = '#000000';
+                        // @ts-ignore
+                        el.style.visibility = 'visible';
+                    }
+                }
+            });
+            const pdfBuffer = await page.pdf({
+                format: 'A4',
+                printBackground: true, // Arxa plan rənglərini/şəkillərini çap etmək üçün
+                margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' }
+                // DisplayHeaderFooter kimi əlavə seçimlər də burada təyin edilə bilər
+            });
+            console.log(`PDF created successfully, size: ${pdfBuffer.length} bytes`);
+            return pdfBuffer;
+        }
+        catch (error) {
+            console.error('HTML to PDF conversion error:', error);
+            throw new Error(`HTML to PDF conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        finally {
+            // Error olsa belə browseri bağlamağı təmin etmək üçün finally bloku
+            if (browser) {
+                await browser.close();
+            }
+        }
+    }
+    static async finalApproveLetterSingle(letterId, userId, placements, comment) {
+        if (!R2_PUB_URL) {
+            throw new errorHandler_1.AppError(500, 'Server configuration error: R2 public URL is missing.');
+        }
+        const transaction = await sequelize_2.sequelize.transaction();
+        try {
             const letter = await letter_model_1.Letter.findByPk(letterId, {
                 transaction,
-                lock: transaction.LOCK.UPDATE // Lock the row for update to prevent race conditions
+                include: [
+                    { model: template_model_1.default, as: 'template', attributes: ['id', 'name', 'content'] }
+                ]
             });
             if (!letter) {
                 await transaction.rollback();
-                console.error(`[Service] FinalApproveSingle Error: Letter ${letterId} not found.`);
                 throw new errorHandler_1.AppError(404, `Letter not found: ${letterId}`);
             }
-            console.log(`[Service] Letter ${letterId} found and locked.`);
-            // 2. Perform Validations
             if (letter.workflowStatus !== letter_model_1.LetterWorkflowStatus.PENDING_APPROVAL) {
                 await transaction.rollback();
-                console.error(`[Service] FinalApproveSingle Error: Letter ${letterId} has incorrect status: ${letter.workflowStatus}`);
                 throw new errorHandler_1.AppError(400, `Letter must be in pending_approval status. Current status: ${letter.workflowStatus}`);
             }
             if (letter.nextActionById !== userId) {
                 await transaction.rollback();
-                console.error(`[Service] FinalApproveSingle Error: User ${userId} is not the designated approver (expected ${letter.nextActionById}) for letter ${letterId}.`);
                 throw new errorHandler_1.AppError(403, `User ${userId} is not the designated approver for this letter.`);
             }
-            // --- PDF specific checks removed ---
-            console.log(`[Service] Validations passed for final approval (single) of letter ${letterId}.`);
-            // 3. Update Letter Record in DB
-            console.log(`[Service] Updating letter ${letterId} record in DB for final approval (single).`);
+            if (!letter.template || !letter.template.content) {
+                await transaction.rollback();
+                throw new errorHandler_1.AppError(400, 'Cannot finalize approval: Template content is missing.');
+            }
+            const templateContent = letter.template.content;
+            let htmlContent = templateContent;
+            if (letter.formData) {
+                htmlContent = templateContent.replace(/#([a-zA-Z0-9-]+)#/g, (match, p1) => {
+                    var _a, _b;
+                    return (_b = (_a = letter.formData) === null || _a === void 0 ? void 0 : _a[p1]) !== null && _b !== void 0 ? _b : '';
+                });
+            }
+            console.log(`Converting HTML to PDF for letter ${letterId}`);
+            const pdfBuffer = await LetterService.convertHtmlToPdf(htmlContent);
+            console.log(`PDF buffer created, size: ${(pdfBuffer === null || pdfBuffer === void 0 ? void 0 : pdfBuffer.length) || 0} bytes`);
+            if (!pdfBuffer || pdfBuffer.length === 0) {
+                throw new errorHandler_1.AppError(500, "Failed to generate PDF from HTML - empty buffer returned");
+            }
+            const pdfDoc = await pdf_lib_1.PDFDocument.load(pdfBuffer);
+            console.log(`PDF document loaded successfully`);
+            const pages = pdfDoc.getPages();
+            console.log(`PDF has ${pages.length} pages`);
+            if (!pages || pages.length === 0) {
+                throw new errorHandler_1.AppError(500, "PDF document has no pages");
+            }
+            // Embed signatures and stamps
+            for (const item of placements) {
+                if (item.type === 'signature' || item.type === 'stamp') {
+                    if (item.pageNumber < 1 || item.pageNumber > pages.length) {
+                        console.warn(`Skipping placement: Invalid page ${item.pageNumber} for item ${item.type} in letter ${letterId}.`);
+                        continue;
+                    }
+                    if (!item.url) {
+                        console.warn(`Skipping image placement: URL missing for ${item.type} in letter ${letterId}`);
+                        continue;
+                    }
+                    let imageBytes = null;
+                    try {
+                        if (item.url.startsWith('http')) {
+                            const response = await axios_1.default.get(item.url, { responseType: 'arraybuffer' });
+                            imageBytes = Buffer.from(response.data);
+                        }
+                        else {
+                            imageBytes = await file_service_1.FileService.getFileBuffer(item.url);
+                        }
+                    }
+                    catch (fetchError) {
+                        console.warn(`Skipping image placement for ${item.type} due to fetch error from ${item.url}: ${fetchError.message}`);
+                        continue;
+                    }
+                    if (!imageBytes)
+                        continue;
+                    let pdfImage = null;
+                    try {
+                        if (item.url.toLowerCase().endsWith('.png')) {
+                            pdfImage = await pdfDoc.embedPng(imageBytes);
+                        }
+                        else if (item.url.toLowerCase().endsWith('.jpg') || item.url.toLowerCase().endsWith('.jpeg')) {
+                            pdfImage = await pdfDoc.embedJpg(imageBytes);
+                        }
+                        else {
+                            try {
+                                pdfImage = await pdfDoc.embedPng(imageBytes);
+                            }
+                            catch (e) {
+                                try {
+                                    pdfImage = await pdfDoc.embedJpg(imageBytes);
+                                }
+                                catch (e2) {
+                                    console.warn(`Skipping placement: Unsupported image type for ${item.type} URL ${item.url}`);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    catch (embedError) {
+                        console.error(`Failed to embed image ${item.url} for ${item.type}: ${embedError.message}`);
+                        continue;
+                    }
+                    if (!pdfImage)
+                        continue;
+                    const page = pages[item.pageNumber - 1];
+                    const { height: pageHeight, width: pageWidth } = page.getSize();
+                    let x = item.x;
+                    let y = item.y;
+                    let width = item.width;
+                    let height = item.height;
+                    if (item.xPct !== undefined && item.yPct !== undefined &&
+                        item.widthPct !== undefined && item.heightPct !== undefined) {
+                        x = item.xPct * pageWidth;
+                        y = item.yPct * pageHeight;
+                        width = item.widthPct * pageWidth;
+                        height = item.heightPct * pageHeight;
+                    }
+                    // Preserve aspect ratio for stamps
+                    if (item.type === 'stamp') {
+                        const originalWidth = pdfImage.width;
+                        const originalHeight = pdfImage.height;
+                        const aspectRatio = originalWidth / originalHeight;
+                        // Adjust dimensions to maintain aspect ratio
+                        // Use the provided width as the base, and calculate height
+                        const targetWidth = width;
+                        const targetHeight = targetWidth / aspectRatio;
+                        // If the calculated height exceeds the provided height, adjust width instead
+                        if (targetHeight > height) {
+                            height = height; // Use the provided height as the limit
+                            width = height * aspectRatio; // Recalculate width to maintain aspect ratio
+                        }
+                        else {
+                            width = targetWidth;
+                            height = targetHeight;
+                        }
+                        console.log(`Adjusted stamp dimensions for letter ${letterId}: original=${originalWidth}x${originalHeight}, target=${width}x${height}`);
+                    }
+                    const pdfY = pageHeight - y - height;
+                    try {
+                        page.drawImage(pdfImage, {
+                            x: x,
+                            y: pdfY,
+                            width: width,
+                            height: height
+                        });
+                    }
+                    catch (drawError) {
+                        console.error(`Failed to draw ${item.type} ${item.url} on page ${item.pageNumber}: ${drawError.message}`);
+                    }
+                }
+            }
+            // Generate and embed QR code (unchanged from previous fix)
+            const finalPdfKey = `final-letters/letter-${letter.id}-final-approved.pdf`;
+            const finalPdfPublicUrl = `https://${R2_PUB_URL}/${finalPdfKey}`;
+            const qrCodeBuffer = await qrcode_1.default.toBuffer(finalPdfPublicUrl, {
+                errorCorrectionLevel: 'H',
+                type: 'png',
+                margin: 1,
+                color: { dark: '#000000', light: '#FFFFFF' },
+            });
+            const qrImageEmbed = await pdfDoc.embedPng(qrCodeBuffer);
+            const qrPlacements = placements.filter(p => p.type === 'qrcode');
+            console.log(`Found ${qrPlacements.length} QR code placements for letter ${letterId}`);
+            if (qrPlacements.length > 0) {
+                for (const qrPlace of qrPlacements) {
+                    if (typeof qrPlace.x === 'undefined' || typeof qrPlace.y === 'undefined' ||
+                        typeof qrPlace.width === 'undefined' || typeof qrPlace.height === 'undefined') {
+                        console.warn(`QR placement missing coordinates, using default position instead`);
+                        continue;
+                    }
+                    if (qrPlace.pageNumber < 1 || qrPlace.pageNumber > pages.length) {
+                        console.warn(`QR placeholder on invalid page ${qrPlace.pageNumber} for letter ${letter.id}, skipping.`);
+                        continue;
+                    }
+                    const page = pages[qrPlace.pageNumber - 1];
+                    if (!page) {
+                        console.warn(`Page ${qrPlace.pageNumber} is undefined`);
+                        continue;
+                    }
+                    const pageSize = page.getSize();
+                    const { height: pageHeight, width: pageWidth } = pageSize;
+                    let x = qrPlace.x;
+                    let y = qrPlace.y;
+                    let width = 50;
+                    let height = 50;
+                    if (qrPlace.xPct !== undefined && qrPlace.yPct !== undefined) {
+                        x = qrPlace.xPct * pageWidth;
+                        y = qrPlace.yPct * pageHeight;
+                    }
+                    const qrY = pageHeight - y - height;
+                    console.log(`Embedding QR code on page ${qrPlace.pageNumber} at coordinates: (${x}, ${qrY}), size: ${width}x${height}`);
+                    page.drawImage(qrImageEmbed, {
+                        x: x,
+                        y: qrY,
+                        width: width,
+                        height: height,
+                    });
+                }
+            }
+            else {
+                console.warn(`No QR code placeholder found for letter ${letterId}. Placing QR at default position (last page, bottom-right).`);
+                const lastPage = pages[pages.length - 1];
+                const { width, height } = lastPage.getSize();
+                const qrSize = 50;
+                const margin = 20;
+                lastPage.drawImage(qrImageEmbed, {
+                    x: width - qrSize - margin,
+                    y: margin,
+                    width: qrSize,
+                    height: qrSize
+                });
+            }
+            const finalPdfBytes = await pdfDoc.save();
+            await file_service_1.FileService.uploadBuffer(Buffer.from(finalPdfBytes), finalPdfKey, 'application/pdf');
+            const qrCodeImageFileName = `qr-images/letter-${letter.id}-qr.png`;
+            const uploadedQrImageR2 = await file_service_1.FileService.uploadBuffer(qrCodeBuffer, qrCodeImageFileName, 'image/png');
+            const qrCodeImageUrl = uploadedQrImageR2 === null || uploadedQrImageR2 === void 0 ? void 0 : uploadedQrImageR2.url;
             await letter.update({
                 workflowStatus: letter_model_1.LetterWorkflowStatus.APPROVED,
-                nextActionById: null, // Clear the next action
-                currentStepIndex: null, // Clear the step index
-                // --- PDF/QR/Public Link fields NOT updated ---
-                // qrCodeUrl: null, // Explicitly nullify if needed, or just don't update
-                // publicLink: null,
-                // finalSignedPdfUrl: null
+                nextActionById: null,
+                currentStepIndex: null,
+                finalSignedPdfUrl: finalPdfKey,
+                publicLink: finalPdfPublicUrl,
+                qrCodeUrl: qrCodeImageUrl,
+                placements: placements,
             }, { transaction });
-            console.log(`[Service] Letter ${letterId} DB record updated for final approval (single).`);
-            // 4. Create Action Log
             await letter_action_log_model_1.LetterActionLog.create({
                 letterId,
                 userId,
                 actionType: letter_action_log_model_1.LetterActionType.FINAL_APPROVE,
-                comment: comment || 'Letter finally approved.', // Use provided comment or default
+                comment: comment || 'Letter finally approved.',
             }, { transaction });
-            console.log(`[Service] Action log created for final approval (single) of letter ${letterId}.`);
-            // 5. Log General Activity
             await activity_service_1.ActivityService.logActivity({
                 userId,
-                action: activity_model_1.ActivityType.APPROVE, // Use general APPROVE type
+                action: activity_model_1.ActivityType.APPROVE,
                 resourceType: activity_model_1.ResourceType.LETTER,
                 resourceId: letterId,
-                resourceName: letter.name || `Letter ${letter.id.substring(0, 6)}`, // Use letter name or fallback ID
+                resourceName: letter.name || `Letter ${letter.id.substring(0, 6)}`,
                 details: `Letter finally approved. ${comment ? `Comment: ${comment}` : ''}`,
-                transaction // Pass transaction to activity log
+                transaction
             });
-            console.log(`[Service] Activity logged for final approval (single) of letter ${letterId}.`);
-            // 6. Commit Transaction
             await transaction.commit();
-            console.log(`[Service] Transaction committed successfully for final approval (single) of letter ${letterId}.`);
-            // --- Post-Transaction Actions (Notifications) ---
             try {
-                console.log(`[Service] Attempting to send notifications for final approval (single) of letter ${letterId}.`);
-                const submitter = await user_model_1.User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName'] });
-                const approver = await user_model_1.User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] }); // Get approver details too
+                const submitter = await user_model_1.User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
+                const approver = await user_model_1.User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] });
                 if (submitter && approver) {
                     const approverName = `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email;
                     const letterName = letter.name || `Letter ${letter.id.substring(0, 6)}`;
-                    // IMPORTANT: Link to the internal view page, not a non-existent public PDF
-                    const letterViewUrl = `${CLIENT_URL}/dashboard/letters/${letter.id}`; // Adjust client URL/path as needed
+                    const letterViewUrl = `${CLIENT_URL}/dashboard/MyStaff/LetterView/${letter.id}`;
                     if (submitter.email) {
-                        await email_service_1.EmailService.sendLetterApprovedEmail(submitter.email, submitter.firstName || 'User', letterName, approverName, letterViewUrl // Use internal link
-                        );
-                        console.log(`[Service] Approval email sent to submitter ${submitter.email} for letter ${letterId} (single).`);
+                        await email_service_1.EmailService.sendLetterApprovedEmail(submitter.email, submitter.firstName || 'User', letterName, approverName, letterViewUrl);
                     }
-                    await notification_service_1.NotificationService.createLetterFinalApprovedNotification(submitter.id, letterId, letterName, approverName
-                    // Add letterViewUrl here if your notification service supports it
-                    );
-                    console.log(`[Service] Approval notification created for submitter ${submitter.id} for letter ${letterId} (single).`);
-                }
-                else {
-                    console.warn(`[Service] Could not find full user details for final approval notification (single). Submitter found: ${!!submitter}, Approver found: ${!!approver}`);
+                    await notification_service_1.NotificationService.createLetterFinalApprovedNotification(submitter.id, letterId, letterName, approverName);
                 }
             }
             catch (notificationError) {
-                // Log notification errors but don't fail the whole operation as approval is already done
-                console.error(`[Service] Error sending final approval (single) notification for letter ${letterId}:`, notificationError);
+                console.error(`Error sending final approval notification for letter ${letterId}:`, notificationError);
             }
-            // 7. Refetch and return the updated letter
-            console.log(`[Service] Refetching letter ${letterId} details after final approval (single).`);
-            // Assuming findById handles necessary associations
-            return await this.findById(letterId, userId); // Use existing findById or equivalent
+            const result = await letter_model_1.Letter.findByPk(letterId, {
+                include: [
+                    { model: user_model_1.User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                    { model: letter_reviewer_model_1.LetterReviewer, as: 'letterReviewers', include: [{ model: user_model_1.User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['sequenceOrder', 'ASC']] },
+                    { model: letter_action_log_model_1.LetterActionLog, as: 'letterActionLogs', include: [{ model: user_model_1.User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
+                ]
+            });
+            if (!result) {
+                throw new errorHandler_1.AppError(404, `Letter with ID ${letterId} not found after final approval.`);
+            }
+            return result;
         }
         catch (error) {
-            console.error(`[Service] Error in finalApproveLetterSingle for letter ${letterId}:`, error);
-            // Ensure transaction is rolled back on any error
-            if (transaction) { // Check if transaction exists
+            console.error(`Error in finalApproveLetterSingle for letter ${letterId}:`, error);
+            if (transaction) {
                 try {
                     await transaction.rollback();
-                    console.log(`[Service] Transaction rolled back for letter ${letterId} (single) due to error.`);
+                    console.log(`Transaction rolled back for letter ${letterId} due to error.`);
                 }
                 catch (rbError) {
-                    console.error(`[Service] Error attempting to rollback transaction for letter ${letterId} (single):`, rbError);
+                    console.error(`Error rolling back transaction for letter ${letterId}:`, rbError);
                 }
             }
-            // Re-throw the error to be caught by the controller
             if (error instanceof errorHandler_1.AppError)
                 throw error;
-            throw new errorHandler_1.AppError(500, `Failed to finally approve letter (single): ${error instanceof Error ? error.message : 'Unknown error'}`);
+            throw new errorHandler_1.AppError(500, `Failed to finally approve template letter: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
     static async getAllByUserId(userId) {
