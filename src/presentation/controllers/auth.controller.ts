@@ -13,9 +13,9 @@ export class AuthController {
   private static getCookieOptions(maxAge = 24 * 60 * 60 * 1000) { // default 24 hours
     return {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Secure in production only
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const,
-      maxAge,
+      secure: true, // Always use secure
+      sameSite: process.env.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
+      maxAge: maxAge,
       path: '/',
       domain: process.env.NODE_ENV === 'production' ? '.papercut.website' : undefined
     };
