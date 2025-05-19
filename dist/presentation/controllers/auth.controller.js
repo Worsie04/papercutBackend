@@ -10,13 +10,16 @@ const user_service_1 = require("../../services/user.service");
 const organization_service_1 = require("../../services/organization.service");
 const email_service_1 = require("../../services/email.service");
 const crypto_1 = __importDefault(require("crypto"));
+const jwt_util_1 = require("../../utils/jwt.util");
 class AuthController {
     static async login(req, res, next) {
         console.log("login called");
         try {
             const { email, password, twoFactorToken } = req.body;
+            console.log(`Login attempt for email: ${email}, has 2FA token: ${!!twoFactorToken}`);
             const result = await auth_service_1.AuthService.login(email, password, twoFactorToken);
             if (result.requiresTwoFactor) {
+                console.log(`2FA required for user: ${email}`);
                 res.json({
                     requiresTwoFactor: true,
                     user: {
@@ -28,12 +31,19 @@ class AuthController {
                 });
                 return;
             }
+            // Calculate cookie expiry
+            const cookieMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+            // Set proper cookie with correct settings for cross-domain
+            console.log(`Setting auth cookie for user: ${email}, production mode: ${process.env.NODE_ENV === 'production'}`);
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                maxAge: 24 * 60 * 60 * 1000
+                maxAge: cookieMaxAge,
+                path: '/',
+                domain: process.env.NODE_ENV === 'production' ? undefined : undefined // Use domain in production if needed
             });
+            console.log(`Login successful for: ${email}`);
             res.json({
                 user: result.user,
                 accessToken: result.accessToken,
@@ -42,7 +52,7 @@ class AuthController {
         }
         catch (error) {
             console.error('Login error:', error);
-            next(error);
+            next(error); // Pass error to error handler middleware
         }
     }
     ;
@@ -56,7 +66,7 @@ class AuthController {
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                sameSite: 'none',
                 maxAge: 24 * 60 * 60 * 1000
             });
             res.json(result);
@@ -68,20 +78,65 @@ class AuthController {
     }
     static async refreshToken(req, res, next) {
         try {
-            const { refreshToken } = req.body;
+            console.log('Token refresh requested');
+            // Check for token in cookies first, then body as fallback
+            const refreshToken = req.cookies.refresh_token_w || req.body.refreshToken;
+            // If no token found, try to use the access token to extend session
             if (!refreshToken) {
-                throw new errorHandler_1.AppError(401, 'Refresh token not provided');
+                const accessToken = req.cookies.access_token_w;
+                if (!accessToken) {
+                    console.log('No refresh token or access token provided');
+                    return res.status(401).json({
+                        success: false,
+                        message: 'No refresh token provided'
+                    });
+                }
+                try {
+                    // Try to verify and extend current token
+                    const decoded = jwt_util_1.JwtUtil.verifyToken(accessToken);
+                    // If token is still valid but close to expiry, refresh it
+                    const result = await auth_service_1.AuthService.extendSession(decoded.id, decoded.type);
+                    // Set new access token cookie
+                    res.cookie('access_token_w', result.accessToken, {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                        maxAge: 24 * 60 * 60 * 1000,
+                        path: '/'
+                    });
+                    console.log('Session extended successfully');
+                    return res.json({ accessToken: result.accessToken });
+                }
+                catch (error) {
+                    console.log('Failed to extend session with access token');
+                    throw new errorHandler_1.AppError(401, 'Invalid token. Please login again');
+                }
             }
+            // Normal refresh flow with refresh token
             const result = await auth_service_1.AuthService.refreshToken(refreshToken);
+            // Set new access token cookie
             res.cookie('access_token_w', result.accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                maxAge: 24 * 60 * 60 * 1000
+                maxAge: 24 * 60 * 60 * 1000,
+                path: '/'
             });
-            res.json({ accessToken: result.accessToken });
+            // Optionally set new refresh token cookie if using rolling refresh tokens
+            if (result.refreshToken) {
+                res.cookie('refresh_token_w', result.refreshToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                    path: '/'
+                });
+            }
+            console.log('Token refreshed successfully');
+            res.json({ accessToken: result.accessToken }); // Only send necessary info back
         }
         catch (error) {
+            console.error('Token refresh error:', error);
             next(error);
         }
     }
@@ -96,14 +151,31 @@ class AuthController {
         }
     }
     static async verifyToken(req, res, next) {
+        var _a;
         try {
-            if (!req.user) {
-                return res.status(401).json({ message: 'Authentication required' });
-                //throw new AppError(401, 'Invalid token');
+            // First try to get token from cookies, then header
+            let token;
+            if (req.cookies && req.cookies.access_token_w) {
+                token = req.cookies.access_token_w;
             }
-            console.log('User verified:', req.user);
-            const user = await auth_service_1.AuthService.getUser(req.user.id, req.user.type);
-            res.json({ user });
+            else if ((_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.startsWith('Bearer ')) {
+                token = req.headers.authorization.substring(7);
+            }
+            // If no token is found, return empty user object (not authenticated)
+            if (!token) {
+                return res.status(200).json({ user: null });
+            }
+            try {
+                // Verify the token
+                const decoded = jwt_util_1.JwtUtil.verifyToken(token.trim());
+                // Get user data
+                const user = await auth_service_1.AuthService.getUser(decoded.id, decoded.type);
+                return res.json({ user });
+            }
+            catch (error) {
+                // If token verification fails, return empty user object
+                return res.status(200).json({ user: null });
+            }
         }
         catch (error) {
             next(error);
@@ -111,14 +183,33 @@ class AuthController {
     }
     static async logout(req, res, next) {
         try {
+            console.log('Logout requested');
+            // Clear the cookie with the same settings used to set it
             res.clearCookie('access_token_w', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                path: '/',
+                domain: process.env.NODE_ENV === 'production' ? undefined : undefined
             });
+            // Optionally clear refresh token cookie if used
+            // res.clearCookie('refresh_token_w', { ...cookie options });
+            // If user information is available in request
+            if (req.user) {
+                try {
+                    await auth_service_1.AuthService.logout(req.user.id, req.user.type);
+                    console.log(`User ${req.user.email} logged out successfully`);
+                }
+                catch (error) {
+                    console.error('Error updating user logout status:', error);
+                    // Continue with logout even if this fails
+                }
+            }
+            console.log('Logout successful');
             res.status(200).json({ message: 'Logged out successfully' });
         }
         catch (error) {
+            console.error('Logout error:', error);
             next(error);
         }
     }
@@ -243,15 +334,17 @@ class AuthController {
             }
             const requiresTwoFactor = await auth_service_1.AuthService.isTwoFactorEnabled(user.id);
             const accessToken = await auth_service_1.AuthService.generateAccessToken(user);
+            // Set cookie after successful magic link verification
             res.cookie('access_token_w', accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                maxAge: 24 * 60 * 60 * 1000
+                maxAge: 24 * 60 * 60 * 1000,
+                path: '/'
             });
             return res.json({
                 user,
-                accessToken,
+                accessToken, // Still return token for potential use, but cookie is primary
                 requiresTwoFactor,
             });
         }
@@ -274,11 +367,13 @@ class AuthController {
             await user_service_1.UserService.updateUser(userId, { password, isActive: true });
             const accessToken = await auth_service_1.AuthService.generateAccessToken(user);
             await auth_service_1.AuthService.clearMagicLinkToken(userId);
+            // Set cookie after setting password
             res.cookie('access_token_w', accessToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                maxAge: 24 * 60 * 60 * 1000
+                maxAge: 24 * 60 * 60 * 1000,
+                path: '/'
             });
             return res.json({
                 user,

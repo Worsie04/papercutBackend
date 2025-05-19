@@ -15,10 +15,12 @@ export class AuthController {
     console.log("login called")
     try {
       const { email, password, twoFactorToken } = req.body;
+      console.log(`Login attempt for email: ${email}, has 2FA token: ${!!twoFactorToken}`);
 
       const result = await AuthService.login(email, password, twoFactorToken);
 
       if (result.requiresTwoFactor) {
+        console.log(`2FA required for user: ${email}`);
         res.json({
           requiresTwoFactor: true,
           user: {
@@ -31,14 +33,21 @@ export class AuthController {
         return;
       }
 
+      // Calculate cookie expiry
+      const cookieMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+      // Set proper cookie with correct settings for cross-domain
+      console.log(`Setting auth cookie for user: ${email}, production mode: ${process.env.NODE_ENV === 'production'}`);
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: 24 * 60 * 60 * 1000,
-        path: '/'
+        maxAge: cookieMaxAge,
+        path: '/',
+        domain: process.env.NODE_ENV === 'production' ? undefined : undefined // Use domain in production if needed
       });
 
+      console.log(`Login successful for: ${email}`);
       res.json({
         user: result.user,
         accessToken: result.accessToken,
@@ -75,26 +84,72 @@ export class AuthController {
 
   static async refreshToken(req: Request, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body; // Assuming refresh token sent in body
-      // Or check cookies: const refreshToken = req.cookies?.refresh_token_w;
+      console.log('Token refresh requested');
+      
+      // Check for token in cookies first, then body as fallback
+      const refreshToken = req.cookies.refresh_token_w || req.body.refreshToken;
+      
+      // If no token found, try to use the access token to extend session
       if (!refreshToken) {
-        throw new AppError(401, 'Refresh token not provided');
+        const accessToken = req.cookies.access_token_w;
+        if (!accessToken) {
+          console.log('No refresh token or access token provided');
+          return res.status(401).json({ 
+            success: false,
+            message: 'No refresh token provided' 
+          });
+        }
+        
+        try {
+          // Try to verify and extend current token
+          const decoded = JwtUtil.verifyToken(accessToken);
+          // If token is still valid but close to expiry, refresh it
+          const result = await AuthService.extendSession(decoded.id, decoded.type as 'user' | 'admin');
+          
+          // Set new access token cookie
+          res.cookie('access_token_w', result.accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            maxAge: 24 * 60 * 60 * 1000,
+            path: '/'
+          });
+          
+          console.log('Session extended successfully');
+          return res.json({ accessToken: result.accessToken });
+        } catch (error) {
+          console.log('Failed to extend session with access token');
+          throw new AppError(401, 'Invalid token. Please login again');
+        }
       }
+      
+      // Normal refresh flow with refresh token
       const result = await AuthService.refreshToken(refreshToken);
 
       // Set new access token cookie
-       res.cookie('access_token_w', result.accessToken, {
-         httpOnly: true,
-         secure: process.env.NODE_ENV === 'production',
-         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-         maxAge: 24 * 60 * 60 * 1000,
-         path: '/'
-       });
-       // Optionally set new refresh token cookie if using rolling refresh tokens
-       // res.cookie('refresh_token_w', result.refreshToken, { ...cookie options });
+      res.cookie('access_token_w', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+      
+      // Optionally set new refresh token cookie if using rolling refresh tokens
+      if (result.refreshToken) {
+        res.cookie('refresh_token_w', result.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          path: '/'
+        });
+      }
 
+      console.log('Token refreshed successfully');
       res.json({ accessToken: result.accessToken }); // Only send necessary info back
     } catch (error) {
+      console.error('Token refresh error:', error);
       next(error);
     }
   }
@@ -143,20 +198,35 @@ export class AuthController {
 
   static async logout(req: Request, res: Response, next: NextFunction) {
     try {
-      // No need to check req.user here, just clear the cookie
+      console.log('Logout requested');
+      
+      // Clear the cookie with the same settings used to set it
       res.clearCookie('access_token_w', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        path: '/'
+        path: '/',
+        domain: process.env.NODE_ENV === 'production' ? undefined : undefined
       });
+
       // Optionally clear refresh token cookie if used
       // res.clearCookie('refresh_token_w', { ...cookie options });
 
-      // Optionally, could add token invalidation logic on backend if needed (e.g., blocklist)
+      // If user information is available in request
+      if (req.user) {
+        try {
+          await AuthService.logout(req.user.id, req.user.type as 'user' | 'admin');
+          console.log(`User ${req.user.email} logged out successfully`);
+        } catch (error) {
+          console.error('Error updating user logout status:', error);
+          // Continue with logout even if this fails
+        }
+      }
 
+      console.log('Logout successful');
       res.status(200).json({ message: 'Logged out successfully' });
     } catch (error) {
+      console.error('Logout error:', error);
       next(error);
     }
   }

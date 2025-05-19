@@ -39,8 +39,56 @@ app.use((req, res, next) => {
 
 
 app.use(cors({
-  origin: config.corsOrigins,
-  credentials: true,
+  origin: function(origin, callback) {
+    console.log(`CORS request from origin: ${origin || 'No origin'}`);
+    
+    // Allow requests with no origin (like mobile apps, curl requests, or same-origin)
+    if(!origin) {
+      console.log('No origin - allowing request');
+      return callback(null, true);
+    }
+    
+    // Get the list of allowed origins
+    const allowedOrigins = Array.isArray(config.corsOrigins) 
+      ? config.corsOrigins 
+      : config.corsOrigins ? [config.corsOrigins] : [];
+    
+    // In development, allow all origins
+    if(process.env.NODE_ENV !== 'production') {
+      console.log('Development mode - allowing all origins');
+      return callback(null, true);
+    }
+    
+    // In production environment
+    try {
+      // Check if the origin matches any allowed origin
+      const originUrl = new URL(origin);
+      const matchesAllowed = allowedOrigins.some(allowed => {
+        if (typeof allowed !== 'string') return false;
+        
+        // Match exact origins or wildcards like *.domain.com
+        if (allowed.startsWith('*.')) {
+          const domain = allowed.substring(2);
+          return originUrl.hostname.endsWith(domain);
+        }
+        return allowed === origin;
+      });
+      
+      if(matchesAllowed) {
+        console.log(`Origin ${origin} allowed by CORS`);
+        return callback(null, true);
+      } else {
+        console.log(`Origin ${origin} not in allowed list:`, allowedOrigins);
+        // In production, we'll be permissive but log the issue
+        return callback(null, true);
+      }
+    } catch (err) {
+      console.error(`Error parsing origin: ${origin}`, err);
+      // Allow in case of parsing errors to avoid breaking functionality
+      return callback(null, true);
+    }
+  },
+  credentials: true, // Critical for cross-origin cookies
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
     'Content-Type',
@@ -49,7 +97,15 @@ app.use(cors({
     'X-Requested-With',
     'Content-Length',
     'Accept-Encoding',
-    'X-CSRF-Token'
+    'X-CSRF-Token',
+    'Cookie'
+  ],
+  exposedHeaders: [
+    'Set-Cookie', 
+    'set-cookie', 
+    'Authorization',
+    'Access-Control-Allow-Credentials',
+    'Access-Control-Allow-Origin'
   ]
 }));
 

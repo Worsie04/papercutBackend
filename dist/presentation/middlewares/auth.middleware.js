@@ -10,17 +10,42 @@ const authenticate = (type) => {
     return async (req, res, next) => {
         var _a;
         try {
+            // Special case for /auth/verify endpoint to handle optional authentication
+            const isVerifyEndpoint = req.path === '/verify';
             let token;
-            // Check Authorization header
-            const authHeader = req.headers.authorization;
-            if (authHeader && authHeader.startsWith('Bearer ')) {
-                token = authHeader.substring(7);
+            // Debug request details
+            console.log(`Request path: ${req.path}, Method: ${req.method}`);
+            console.log(`Cookie keys: ${req.cookies ? Object.keys(req.cookies).join(', ') : 'No cookies'}`);
+            // Check cookie first (primary auth method)
+            if (req.cookies && req.cookies.access_token_w) {
+                token = req.cookies.access_token_w;
+                console.log('Found token in cookies');
             }
+            // If no cookie token, check Authorization header (fallback)
             if (!token) {
-                token = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a.access_token_w;
+                const authHeader = req.headers.authorization;
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    token = authHeader.substring(7);
+                    console.log('Found token in Authorization header');
+                }
             }
             if (!token || typeof token !== 'string' || token.trim() === '') {
-                throw new errorHandler_1.AppError(401, 'No token provided');
+                if (isVerifyEndpoint) {
+                    // For verify endpoint, just proceed with no user
+                    console.log('Verify endpoint accessed without token - this is normal');
+                    req.user = undefined;
+                    return next();
+                }
+                console.log('No token found in request', {
+                    cookies: req.cookies ? 'Has cookies' : 'No cookies',
+                    headers: req.headers ? 'Has headers' : 'No headers',
+                    authorization: ((_a = req.headers) === null || _a === void 0 ? void 0 : _a.authorization) ? 'Has auth header' : 'No auth header'
+                });
+                // Return 401 with proper message
+                return res.status(401).json({
+                    success: false,
+                    message: 'Authentication required. Please log in.'
+                });
             }
             try {
                 const decoded = jwt_util_1.JwtUtil.verifyToken(token.trim());
@@ -33,6 +58,12 @@ const authenticate = (type) => {
                 next();
             }
             catch (error) {
+                if (isVerifyEndpoint) {
+                    // For verify endpoint, just proceed with no user
+                    req.user = undefined;
+                    return next();
+                }
+                console.error('Token verification failed:', error);
                 throw new errorHandler_1.AppError(401, 'Invalid or expired token');
             }
         }
@@ -114,9 +145,12 @@ exports.requireActive = requireActive;
 const requireAuth = async (req, res, next) => {
     var _a;
     try {
-        // Check for token in cookies or Authorization header
-        //const token = req.cookies.access_token_w || req.headers.authorization?.split(' ')[1];
-        const token = (_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.split(' ')[1];
+        // Check for token in cookies first, then header as fallback
+        let token = req.cookies.access_token_w;
+        // If token not in cookies, check Authorization header
+        if (!token && ((_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.startsWith('Bearer '))) {
+            token = req.headers.authorization.split(' ')[1];
+        }
         if (!token) {
             throw new errorHandler_1.AppError(401, 'Authentication required. Please login.');
         }

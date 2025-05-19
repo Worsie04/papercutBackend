@@ -11,6 +11,7 @@ export interface TokenPayload {
 export class JwtUtil {
   private static readonly SECRET = config.jwt.secret;
   private static readonly EXPIRES_IN = config.jwt.expiresIn;
+  private static readonly REFRESH_EXPIRES_IN = '7d'; // 7 days
 
   static generateToken(payload: TokenPayload): string {
     return jwt.sign(
@@ -43,11 +44,26 @@ export class JwtUtil {
     }
   }
 
-  static generateRefreshToken(userId: string, type: 'user' | 'admin'): string {
+  static generateRefreshToken(payload: TokenPayload): string {
     return jwt.sign(
-      { id: userId, type } as any, 
+      payload as any, 
       this.SECRET as string, 
-      { expiresIn: '7d' } as SignOptions
+      { expiresIn: this.REFRESH_EXPIRES_IN } as SignOptions
     );
+  }
+  
+  static verifyRefreshToken(token: string): TokenPayload {
+    try {
+      return jwt.verify(token, this.SECRET as string) as TokenPayload;
+    } catch (error: any) {
+      // Provide more specific error messages based on the type of error
+      if (error.name === 'TokenExpiredError') {
+        throw new Error('Refresh token has expired');
+      } else if (error.name === 'JsonWebTokenError') {
+        throw new Error(`Invalid refresh token: ${error.message}`);
+      } else {
+        throw new Error(`Refresh token verification failed: ${error.message}`);
+      }
+    }
   }
 }

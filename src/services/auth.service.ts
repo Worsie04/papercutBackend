@@ -113,7 +113,7 @@ export class AuthService {
 
     return {
       accessToken: JwtUtil.generateToken(payload),
-      refreshToken: JwtUtil.generateRefreshToken(user.id, 'user'),
+      refreshToken: JwtUtil.generateRefreshToken(payload),
       user,
     };
   }
@@ -157,7 +157,7 @@ export class AuthService {
     //console.log('Generating tokens for admin:', email);
     return {
       accessToken: JwtUtil.generateToken(payload),
-      refreshToken: JwtUtil.generateRefreshToken(admin.id, 'admin'),
+      refreshToken: JwtUtil.generateRefreshToken(payload),
       user: admin,
     };
   }
@@ -199,38 +199,67 @@ export class AuthService {
     }
   }
 
+  static async extendSession(userId: string, userType: 'user' | 'admin'): Promise<TokenResponse> {
+    try {
+      const user = await this.getUser(userId, userType);
+      
+      if (!user) {
+        throw new AppError(401, 'User not found');
+      }
+      
+      // Generate new tokens
+      const tokenPayload: TokenPayload = {
+        id: user.id,
+        email: user.email,
+        type: userType,
+        // Role is optional in TokenPayload so we can safely add it if available
+        ...(userType === 'admin' && (user as any).role && { role: (user as any).role })
+      };
+      
+      const accessToken = JwtUtil.generateToken(tokenPayload);
+      const refreshToken = JwtUtil.generateRefreshToken(tokenPayload);
+      
+      console.log(`Session extended for user ${user.email}`);
+      
+      return {
+        accessToken,
+        refreshToken
+      };
+    } catch (error) {
+      console.error('Extend session error:', error);
+      throw new AppError(401, 'Failed to extend session');
+    }
+  }
+  
   static async refreshToken(refreshToken: string): Promise<TokenResponse> {
-    const decoded = JwtUtil.verifyToken(refreshToken);
-    if (!decoded || !decoded.id || !decoded.type) {
-      throw new AppError(401, 'Invalid refresh token');
+    try {
+      const decoded = JwtUtil.verifyRefreshToken(refreshToken);
+      const user = await this.getUser(decoded.id, decoded.type as 'user' | 'admin');
+      
+      if (!user) {
+        throw new AppError(401, 'Invalid refresh token');
+      }
+      
+      // Generate new tokens
+      const tokenPayload: TokenPayload = {
+        id: user.id,
+        email: user.email,
+        type: decoded.type,
+        // Role is optional in TokenPayload so we can safely add it if available
+        ...(decoded.type === 'admin' && (user as any).role && { role: (user as any).role })
+      };
+      
+      const accessToken = JwtUtil.generateToken(tokenPayload);
+      const newRefreshToken = JwtUtil.generateRefreshToken(tokenPayload);
+      
+      return {
+        accessToken,
+        refreshToken: newRefreshToken
+      };
+    } catch (error) {
+      console.error('Refresh token error:', error);
+      throw new AppError(401, 'Invalid or expired refresh token');
     }
-
-    let entity;
-    if (decoded.type === 'admin') {
-      entity = await Admin.findByPk(decoded.id);
-    } else {
-      entity = await User.findByPk(decoded.id);
-    }
-
-    if (!entity) {
-      throw new AppError(401, 'Invalid refresh token');
-    }
-
-    if (!entity.isActive) {
-      throw new AppError(403, 'Account is deactivated');
-    }
-
-    const payload: TokenPayload = {
-      id: entity.id,
-      email: entity.email,
-      type: decoded.type,
-      role: decoded.type === 'admin' ? (entity as Admin).role : undefined,
-    };
-
-    return {
-      accessToken: JwtUtil.generateToken(payload),
-      refreshToken: JwtUtil.generateRefreshToken(entity.id, decoded.type),
-    };
   }
 
   static async verifyEmail(token: string): Promise<void> {
@@ -411,4 +440,4 @@ export class AuthService {
 
     return JwtUtil.generateToken(payload);
   }
-} 
+}

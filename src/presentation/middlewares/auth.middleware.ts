@@ -23,7 +23,13 @@ type UserType = 'user' | 'admin' | 'super_admin' | 'super_user';
 export const authenticate = (type?: UserType | UserType[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Special case for /auth/verify endpoint to handle optional authentication
+      const isVerifyEndpoint = req.path === '/verify';
       let token: string | undefined;
+      
+      // Debug request details
+      console.log(`Request path: ${req.path}, Method: ${req.method}`);
+      console.log(`Cookie keys: ${req.cookies ? Object.keys(req.cookies).join(', ') : 'No cookies'}`);
       
       // Check cookie first (primary auth method)
       if (req.cookies && req.cookies.access_token_w) {
@@ -41,12 +47,24 @@ export const authenticate = (type?: UserType | UserType[]) => {
       }
 
       if (!token || typeof token !== 'string' || token.trim() === '') {
+        if (isVerifyEndpoint) {
+          // For verify endpoint, just proceed with no user
+          console.log('Verify endpoint accessed without token - this is normal');
+          req.user = undefined;
+          return next();
+        }
+        
         console.log('No token found in request', { 
           cookies: req.cookies ? 'Has cookies' : 'No cookies', 
           headers: req.headers ? 'Has headers' : 'No headers',
           authorization: req.headers?.authorization ? 'Has auth header' : 'No auth header'
         });
-        throw new AppError(401, 'No token provided');
+        
+        // Return 401 with proper message
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required. Please log in.'
+        });
       }
       
       try {
@@ -59,6 +77,11 @@ export const authenticate = (type?: UserType | UserType[]) => {
         };
         next();
       } catch (error) {
+        if (isVerifyEndpoint) {
+          // For verify endpoint, just proceed with no user
+          req.user = undefined;
+          return next();
+        }
         console.error('Token verification failed:', error);
         throw new AppError(401, 'Invalid or expired token');
       }

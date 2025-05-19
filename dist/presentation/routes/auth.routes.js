@@ -35,8 +35,9 @@ router.post('/refresh-token', tokenLimiter, (0, validate_middleware_1.validate)(
 router.post('/forgot-password', authLimiter, (0, validate_middleware_1.validate)(auth_validator_1.forgotPasswordSchema), auth_controller_1.AuthController.forgotPassword);
 router.post('/reset-password', authLimiter, (0, validate_middleware_1.validate)(auth_validator_1.resetPasswordSchema), auth_controller_1.AuthController.resetPassword);
 router.post('/verify-email', (0, validate_middleware_1.validate)(auth_validator_1.verifyEmailSchema), auth_controller_1.AuthController.verifyEmail);
-// Token verification endpoint
-//router.get('/verify', authenticate(), AuthController.verifyToken);
+// Token verification endpoint - no authentication required
+// This endpoint should handle token verification internally
+router.get('/verify', auth_controller_1.AuthController.verifyToken);
 // Protected routes
 router.post('/change-password', (0, auth_middleware_1.authenticate)(), auth_middleware_1.requireActive, (0, validate_middleware_1.validate)(auth_validator_1.changePasswordSchema), auth_controller_1.AuthController.changePassword);
 router.post('/resend-verification', (0, auth_middleware_1.authenticate)(), auth_controller_1.AuthController.resendVerification);
