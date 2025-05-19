@@ -13,9 +13,9 @@ export class AuthController {
   private static getCookieOptions(maxAge = 24 * 60 * 60 * 1000) { // default 24 hours
     return {
       httpOnly: true,
-      secure: true, // Always use secure
-      sameSite: process.env.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
-      maxAge: maxAge,
+      secure: process.env.NODE_ENV === 'production', // Secure in production only
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' as const : 'lax' as const,
+      maxAge,
       path: '/',
       domain: process.env.NODE_ENV === 'production' ? '.papercut.website' : undefined
     };
@@ -45,7 +45,7 @@ export class AuthController {
 
       // Set proper cookie with correct settings for cross-domain
       console.log(`Setting auth cookie for user: ${email}, production mode: ${process.env.NODE_ENV === 'production'}`);
-      const cookieOptions = this.getCookieOptions();
+      const cookieOptions = AuthController.getCookieOptions();
       console.log('Cookie options:', cookieOptions);
       res.cookie('access_token_w', result.accessToken, cookieOptions);
 
