@@ -10,16 +10,6 @@ import { JwtUtil } from '../../utils/jwt.util';
 
 export class AuthController {
 
-  private static getCookieOptions(maxAge = 24 * 60 * 60 * 1000) { // default 24 hours
-    return {
-      httpOnly: true,
-      secure: true, // Always use secure
-      sameSite: process.env.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
-      maxAge: maxAge,
-      path: '/',
-      domain: process.env.NODE_ENV === 'production' ? '.papercut.website' : undefined
-    };
-  }
 
   static async login(req: Request, res: Response, next: NextFunction) {
     console.log("login called")
@@ -43,11 +33,19 @@ export class AuthController {
         return;
       }
 
+      // Calculate cookie expiry
+      const cookieMaxAge = 24 * 60 * 60 * 1000; // 24 hours
+
       // Set proper cookie with correct settings for cross-domain
       console.log(`Setting auth cookie for user: ${email}, production mode: ${process.env.NODE_ENV === 'production'}`);
-      const cookieOptions = AuthController.getCookieOptions();
-      console.log('Cookie options:', cookieOptions);
-      res.cookie('access_token_w', result.accessToken, cookieOptions);
+      res.cookie('access_token_w', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: cookieMaxAge,
+        path: '/',
+        domain: process.env.NODE_ENV === 'production' ? undefined : undefined // Use domain in production if needed
+      });
 
       console.log(`Login successful for: ${email}`);
       res.json({
@@ -57,7 +55,7 @@ export class AuthController {
       });
     } catch (error) {
       console.error('Login error:', error);
-      next(error);
+      next(error); // Pass error to error handler middleware
     }
   };
 
@@ -70,8 +68,12 @@ export class AuthController {
       const result = await AuthService.loginAdmin(email, password);
       console.log('Login successful for admin:', email);
 
-      const cookieOptions = this.getCookieOptions();
-      res.cookie('access_token_w', result.accessToken, cookieOptions);
+      res.cookie('access_token_w', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'none', 
+        maxAge: 24 * 60 * 60 * 1000
+      });
 
       res.json(result);
     } catch (error) {
@@ -105,17 +107,19 @@ export class AuthController {
           const result = await AuthService.extendSession(decoded.id, decoded.type as 'user' | 'admin');
           
           // Set new access token cookie
-          const cookieOptions = this.getCookieOptions();
-          res.cookie('access_token_w', result.accessToken, cookieOptions);
+          res.cookie('access_token_w', result.accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            maxAge: 24 * 60 * 60 * 1000,
+            path: '/'
+          });
           
           console.log('Session extended successfully');
           return res.json({ accessToken: result.accessToken });
         } catch (error) {
           console.log('Failed to extend session with access token');
-          return res.status(401).json({ 
-            success: false,
-            message: 'Invalid token. Please login again' 
-          });
+          throw new AppError(401, 'Invalid token. Please login again');
         }
       }
       
@@ -123,13 +127,23 @@ export class AuthController {
       const result = await AuthService.refreshToken(refreshToken);
 
       // Set new access token cookie
-      const cookieOptions = this.getCookieOptions();
-      res.cookie('access_token_w', result.accessToken, cookieOptions);
+      res.cookie('access_token_w', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/'
+      });
       
       // Optionally set new refresh token cookie if using rolling refresh tokens
       if (result.refreshToken) {
-        const refreshCookieOptions = this.getCookieOptions(7 * 24 * 60 * 60 * 1000); // 7 days
-        res.cookie('refresh_token_w', result.refreshToken, refreshCookieOptions);
+        res.cookie('refresh_token_w', result.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          path: '/'
+        });
       }
 
       console.log('Token refreshed successfully');
@@ -139,7 +153,7 @@ export class AuthController {
       next(error);
     }
   }
-  
+
   static async verifyEmail(req: Request, res: Response, next: NextFunction) {
     try {
       const { token } = req.body;
