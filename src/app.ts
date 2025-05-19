@@ -30,6 +30,14 @@ export const initializeApp = async () => {
 // Security middleware
 app.use(helmet());
 
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
+
 app.use(cors({
   origin: config.corsOrigins,
   credentials: true,
