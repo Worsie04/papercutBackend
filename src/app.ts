@@ -53,13 +53,15 @@ app.use(cors({
       ? config.corsOrigins 
       : config.corsOrigins ? [config.corsOrigins] : [];
     
-    // In development, allow all origins
-    if(process.env.NODE_ENV !== 'production') {
-      console.log('Development mode - allowing all origins');
-      return callback(null, true);
+    // Also allow papercut.website domains in production
+    if (process.env.NODE_ENV === 'production') {
+      allowedOrigins.push(
+        'https://www.papercut.website',
+        'https://papercut.website',
+        'https://admin.papercut.website'
+      );
     }
     
-    // In production environment
     try {
       // Check if the origin matches any allowed origin
       const originUrl = new URL(origin);
@@ -78,14 +80,12 @@ app.use(cors({
         console.log(`Origin ${origin} allowed by CORS`);
         return callback(null, true);
       } else {
-        console.log(`Origin ${origin} not in allowed list:`, allowedOrigins);
-        // In production, we'll be permissive but log the issue
-        return callback(null, true);
+        console.log(`Origin ${origin} not allowed by CORS. Allowed origins:`, allowedOrigins);
+        return callback(new Error('Not allowed by CORS'));
       }
     } catch (err) {
       console.error(`Error parsing origin: ${origin}`, err);
-      // Allow in case of parsing errors to avoid breaking functionality
-      return callback(null, true);
+      return callback(new Error('Invalid origin'));
     }
   },
   credentials: true, // Critical for cross-origin cookies
