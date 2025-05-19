@@ -6,6 +6,7 @@ import { OrganizationService } from '../../services/organization.service';
 import { EmailService } from '../../services/email.service';
 import crypto from 'crypto';
 import { OrganizationMemberService } from '../../services/organization-member.service';
+import { JwtUtil } from '../../utils/jwt.util';
 
 export class AuthController {
 
@@ -33,8 +34,9 @@ export class AuthController {
       res.cookie('access_token_w', result.accessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none',
-        maxAge: 24 * 60 * 60 * 1000
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/'
       });
 
       res.json({
@@ -84,8 +86,9 @@ export class AuthController {
        res.cookie('access_token_w', result.accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'none',
-         maxAge: 24 * 60 * 60 * 1000 // Example: 24 hours
+         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+         maxAge: 24 * 60 * 60 * 1000,
+         path: '/'
        });
        // Optionally set new refresh token cookie if using rolling refresh tokens
        // res.cookie('refresh_token_w', result.refreshToken, { ...cookie options });
@@ -108,11 +111,31 @@ export class AuthController {
 
   static async verifyToken(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.user) {
-        throw new AppError(401, 'Invalid token');
+      // First try to get token from cookies, then header
+      let token: string | undefined;
+      
+      if (req.cookies && req.cookies.access_token_w) {
+        token = req.cookies.access_token_w;
+      } else if (req.headers.authorization?.startsWith('Bearer ')) {
+        token = req.headers.authorization.substring(7);
       }
-      const user = await AuthService.getUser(req.user.id, req.user.type as 'user' | 'admin');
-      res.json({ user });
+      
+      // If no token is found, return empty user object (not authenticated)
+      if (!token) {
+        return res.status(200).json({ user: null });
+      }
+
+      try {
+        // Verify the token
+        const decoded = JwtUtil.verifyToken(token.trim());
+        
+        // Get user data
+        const user = await AuthService.getUser(decoded.id, decoded.type as 'user' | 'admin');
+        return res.json({ user });
+      } catch (error) {
+        // If token verification fails, return empty user object
+        return res.status(200).json({ user: null });
+      }
     } catch (error) {
       next(error);
     }
@@ -124,7 +147,8 @@ export class AuthController {
       res.clearCookie('access_token_w', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none'
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        path: '/'
       });
       // Optionally clear refresh token cookie if used
       // res.clearCookie('refresh_token_w', { ...cookie options });
@@ -284,8 +308,9 @@ export class AuthController {
        res.cookie('access_token_w', accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'none',
-         maxAge: 24 * 60 * 60 * 1000
+         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+         maxAge: 24 * 60 * 60 * 1000,
+         path: '/'
        });
 
       return res.json({
@@ -323,8 +348,9 @@ export class AuthController {
        res.cookie('access_token_w', accessToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
-         sameSite: 'none',
-         maxAge: 24 * 60 * 60 * 1000
+         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+         maxAge: 24 * 60 * 60 * 1000,
+         path: '/'
        });
 
       return res.json({

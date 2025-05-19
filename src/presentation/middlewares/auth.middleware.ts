@@ -25,21 +25,30 @@ export const authenticate = (type?: UserType | UserType[]) => {
     try {
       let token: string | undefined;
       
-      // Check Authorization header
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
+      // Check cookie first (primary auth method)
+      if (req.cookies && req.cookies.access_token_w) {
+        token = req.cookies.access_token_w;
+        console.log('Found token in cookies');
       }
       
-
+      // If no cookie token, check Authorization header (fallback)
       if (!token) {
-        token = req.cookies?.access_token_w;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          token = authHeader.substring(7);
+          console.log('Found token in Authorization header');
+        }
       }
-
 
       if (!token || typeof token !== 'string' || token.trim() === '') {
+        console.log('No token found in request', { 
+          cookies: req.cookies ? 'Has cookies' : 'No cookies', 
+          headers: req.headers ? 'Has headers' : 'No headers',
+          authorization: req.headers?.authorization ? 'Has auth header' : 'No auth header'
+        });
         throw new AppError(401, 'No token provided');
       }
+      
       try {
         const decoded = JwtUtil.verifyToken(token.trim());
         req.user = {
@@ -50,6 +59,7 @@ export const authenticate = (type?: UserType | UserType[]) => {
         };
         next();
       } catch (error) {
+        console.error('Token verification failed:', error);
         throw new AppError(401, 'Invalid or expired token');
       }
     } catch (error) {
@@ -137,9 +147,13 @@ export const requireActive = async (
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check for token in cookies or Authorization header
-    //const token = req.cookies.access_token_w || req.headers.authorization?.split(' ')[1];
-    const token = req.headers.authorization?.split(' ')[1];
+    // Check for token in cookies first, then header as fallback
+    let token = req.cookies.access_token_w;
+    
+    // If token not in cookies, check Authorization header
+    if (!token && req.headers.authorization?.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
     
     if (!token) {
       throw new AppError(401, 'Authentication required. Please login.');

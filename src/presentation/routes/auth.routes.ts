@@ -48,8 +48,9 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), Aut
 router.post('/reset-password', authLimiter, validate(resetPasswordSchema), AuthController.resetPassword);
 router.post('/verify-email', validate(verifyEmailSchema), AuthController.verifyEmail);
 
-// Token verification endpoint
-router.get('/verify', authenticate(), AuthController.verifyToken);
+// Token verification endpoint - using optional authentication
+// When not authenticated, it should just return an empty user object
+router.get('/verify', AuthController.verifyToken);
 
 // Protected routes
 router.post(
