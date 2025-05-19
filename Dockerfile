@@ -63,6 +63,9 @@ RUN npm install
 # Qalan tətbiq kodunu konteynerə kopyalayırıq.
 COPY . .
 
+# dist qovluğunu təmizləyib yenidən build edirik
+RUN rm -rf dist || true && npm run build
+
 # Əgər tətbiqiniz bir portda dinləyirsə (məsələn, Express server), həmin portu ifşa edin.
 # Backend qovluğundakı koddan göründüyü kimi server 4000 portunda işləyir
 EXPOSE 4000
