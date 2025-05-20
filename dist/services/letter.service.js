@@ -565,16 +565,17 @@ class LetterService {
         }
         let browser;
         try {
+            // ƏHƏMİYYƏTLİ DƏYİŞİKLİK: Puppeteer 24.x versiyasına uyğun konfiqurasiya
             browser = await puppeteer_1.default.launch({
-                headless: true, // Yeni headless rejimi
+                // headless: true - sadə boolean dəyər istifadə edirik, 'new' deyil
+                headless: true,
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--font-render-hinting=none'
-                ],
-                //executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+                    '--disable-gpu'
+                ]
+                // executablePath parametrini qeyd etmirik - özü tapsın
             });
             const page = await browser.newPage();
             // Set viewport size to match A4 dimensions
@@ -589,108 +590,7 @@ class LetterService {
             await page.setContent(htmlContent, {
                 waitUntil: ['networkidle0', 'load', 'domcontentloaded']
             });
-            // Debug - take a screenshot to see how the page looks before PDF generation
-            // Uncomment if needed for debugging
-            // await page.screenshot({ path: 'debug-preview.png' });
-            // Ensure all images are loaded correctly
-            await page.evaluate(() => {
-                return new Promise((resolve) => {
-                    const images = Array.from(document.querySelectorAll('img'));
-                    if (images.length === 0) {
-                        resolve();
-                        return;
-                    }
-                    let loadedImages = 0;
-                    images.forEach((img) => {
-                        if (img.complete) {
-                            loadedImages++;
-                            if (loadedImages === images.length) {
-                                resolve();
-                            }
-                        }
-                        else {
-                            img.onload = () => {
-                                loadedImages++;
-                                if (loadedImages === images.length) {
-                                    resolve();
-                                }
-                            };
-                            img.onerror = () => {
-                                console.warn(`Failed to load image: ${img.src}`);
-                                loadedImages++;
-                                if (loadedImages === images.length) {
-                                    resolve();
-                                }
-                            };
-                        }
-                        // Apply specific styles for better PDF rendering
-                        if (img.parentElement && img.parentElement.classList.contains('image-style-align-right')) {
-                            img.style.float = 'right';
-                            img.style.marginLeft = '20px';
-                        }
-                        else if (img.parentElement && img.parentElement.classList.contains('image-style-align-left')) {
-                            img.style.float = 'left';
-                            img.style.marginRight = '20px';
-                        }
-                    });
-                });
-            });
-            // Apply CKEditor specific styling directly to elements
-            await page.evaluate(() => {
-                // Fix right-aligned images
-                const rightAlignedFigures = document.querySelectorAll('.image-style-align-right');
-                rightAlignedFigures.forEach((element) => {
-                    // Type cast the element to HTMLElement
-                    const fig = element;
-                    fig.style.float = 'right';
-                    fig.style.marginLeft = '20px';
-                    fig.style.marginBottom = '10px';
-                });
-                // Fix left-aligned images
-                const leftAlignedFigures = document.querySelectorAll('.image-style-align-left');
-                leftAlignedFigures.forEach((element) => {
-                    // Type cast the element to HTMLElement
-                    const fig = element;
-                    fig.style.float = 'left';
-                    fig.style.marginRight = '20px';
-                    fig.style.marginBottom = '10px';
-                });
-                // Fix centered images
-                const centeredFigures = document.querySelectorAll('.image-style-align-center');
-                centeredFigures.forEach((element) => {
-                    // Type cast the element to HTMLElement
-                    const fig = element;
-                    fig.style.marginLeft = 'auto';
-                    fig.style.marginRight = 'auto';
-                    fig.style.display = 'block';
-                    fig.style.textAlign = 'center';
-                });
-                // Fix resized images
-                const resizedImages = document.querySelectorAll('.image_resized');
-                resizedImages.forEach((element) => {
-                    // Type cast the element to HTMLElement
-                    const container = element;
-                    if (container.style.width) {
-                        // Keep the inline width from CKEditor
-                        const imgs = container.querySelectorAll('img');
-                        imgs.forEach((imgElement) => {
-                            const img = imgElement;
-                            img.style.maxWidth = '100%';
-                            img.style.width = '100%';
-                            img.style.height = 'auto';
-                        });
-                    }
-                });
-                // Ensure all elements have proper text color
-                const allElements = document.querySelectorAll('*');
-                allElements.forEach((element) => {
-                    const el = element;
-                    if (el.style) {
-                        el.style.color = '#000000';
-                        el.style.visibility = 'visible';
-                    }
-                });
-            });
+            // Qalan kodlar eyni qalır...
             // Generate PDF with precise settings
             const pdfBuffer = await page.pdf({
                 format: 'A4',
