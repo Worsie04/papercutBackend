@@ -27,33 +27,61 @@ class FileController {
      * Upload multiple files
      */
     async uploadFiles(req, res) {
+        var _a;
         try {
-            // Extract token from authorization header
+            let userId = 'anonymous';
+            // Giriş 1: Cookie-dən token alınması
+            console.log('Cookie keys:', req.cookies ? Object.keys(req.cookies).join(', ') : 'No cookies');
+            const cookieToken = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a.access_token_w;
+            // Giriş 2: Authorization header-dən token alınması
             const authHeader = req.headers.authorization;
-            let userId;
-            if (authHeader && authHeader.startsWith('Bearer ')) {
-                const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+            console.log('Authorization Header:', authHeader);
+            // Əvvəl cookie token yoxlanılır
+            if (cookieToken) {
                 try {
-                    // Verify the token and extract user ID
-                    const decoded = jwt_util_1.JwtUtil.verifyToken(token);
+                    console.log('Using cookie token for authentication');
+                    const decoded = jwt_util_1.JwtUtil.verifyToken(cookieToken);
                     userId = decoded.id;
+                    console.log('User ID from cookie token:', userId);
                 }
                 catch (tokenError) {
-                    console.error('Token verification failed:', tokenError);
-                    // Allow uploads even without valid authentication for now
-                    // We'll create temporary user uploads
-                    userId = 'anonymous';
+                    console.error('Cookie token verification failed:', tokenError);
+                    // Token yoxlanışı uğursuz oldu - anonymous istifadəçi olaraq davam edirik
+                }
+            }
+            // Cookie token mövcud deyilsə, Authorization header yoxlanılır
+            else if (authHeader && authHeader.startsWith('Bearer ')) {
+                const token = authHeader.substring(7);
+                try {
+                    console.log('Using authorization header token');
+                    const decoded = jwt_util_1.JwtUtil.verifyToken(token);
+                    userId = decoded.id;
+                    console.log('User ID from authorization token:', userId);
+                }
+                catch (tokenError) {
+                    console.error('Authorization token verification failed:', tokenError);
+                    // Token yoxlanışı uğursuz oldu - anonymous istifadəçi olaraq davam edirik
                 }
             }
             else {
-                // No authentication token provided
-                // Use anonymous user ID for temporary uploads
-                userId = 'anonymous';
+                // Daha yaxşı loqlama
+                console.log('No authentication token provided (neither in cookie nor in Authorization header)');
+                if (req.user) {
+                    // req.user middleware tərəfindən təyin olunubsa, bunu istifadə et
+                    userId = req.user.id;
+                    console.log('Using req.user.id from authenticated request:', userId);
+                }
+            }
+            // Tələblərə görə user.id req.user-dən də götürülə bilər
+            if (req.user && req.user.id) {
+                userId = req.user.id;
+                console.log('Using req.user.id from middleware:', userId);
             }
             if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
                 res.status(400).json({ error: 'No files uploaded' });
                 return;
             }
+            console.log(`Processing uploads for user: ${userId}`);
             const savedFiles = await file_service_1.default.saveMultipleFiles(req.files, userId);
             res.status(201).json({
                 message: 'Files uploaded successfully',

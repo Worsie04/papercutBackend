@@ -196,7 +196,7 @@ class LetterController {
             const authenticatedReq = req;
             const reviewerUserId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
             const letterId = req.params.id;
-            const { comment } = req.body;
+            const { comment, name } = req.body;
             if (!reviewerUserId) {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
@@ -207,7 +207,7 @@ class LetterController {
                 return next(new errorHandler_1.AppError(400, 'Invalid comment format.'));
             }
             // --- TODO: Change this to call the new approveStep service method ---
-            const updatedLetter = await letter_service_1.LetterService.approveStep(letterId, reviewerUserId, comment);
+            const updatedLetter = await letter_service_1.LetterService.approveStep(letterId, reviewerUserId, comment, name);
             res.status(200).json({ message: 'Letter review approved successfully.', letter: updatedLetter });
         }
         catch (error) {
@@ -296,7 +296,7 @@ class LetterController {
             const authenticatedReq = req;
             const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
             const letterId = req.params.id;
-            const { comment, placements } = req.body;
+            const { comment, placements, name } = req.body;
             if (!userId)
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             if (!letterId)
@@ -304,9 +304,8 @@ class LetterController {
             if (!placements || !Array.isArray(placements)) {
                 return next(new errorHandler_1.AppError(400, 'Placements array is required for final approval'));
             }
-            console.log("Received placements:", JSON.stringify(placements));
             const validatedPlacements = placements.map(p => (Object.assign(Object.assign({}, p), { x: typeof p.x === 'number' ? p.x : 0, y: typeof p.y === 'number' ? p.y : 0, width: p.type === 'qrcode' ? 50 : (typeof p.width === 'number' ? p.width : 50), height: p.type === 'qrcode' ? 50 : (typeof p.height === 'number' ? p.height : 50), pageNumber: typeof p.pageNumber === 'number' ? p.pageNumber : 1 })));
-            const approvedLetter = await letter_service_1.LetterService.finalApproveLetterSingle(letterId, userId, validatedPlacements, comment);
+            const approvedLetter = await letter_service_1.LetterService.finalApproveLetterSingle(letterId, userId, validatedPlacements, comment, name);
             res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
         }
         catch (error) {

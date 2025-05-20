@@ -163,18 +163,18 @@ class AuthController {
             }
             // If no token is found, return empty user object (not authenticated)
             if (!token) {
-                return res.status(200).json({ user: null });
+                return res.status(200).json({ user: null, accessToken: null });
             }
             try {
                 // Verify the token
                 const decoded = jwt_util_1.JwtUtil.verifyToken(token.trim());
                 // Get user data
                 const user = await auth_service_1.AuthService.getUser(decoded.id, decoded.type);
-                return res.json({ user });
+                return res.json({ user, accessToken: token }); // Return user and the token
             }
             catch (error) {
                 // If token verification fails, return empty user object
-                return res.status(200).json({ user: null });
+                return res.status(200).json({ user: null, accessToken: null });
             }
         }
         catch (error) {

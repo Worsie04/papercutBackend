@@ -640,16 +640,15 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
     let browser;
     try {
         browser = await puppeteer.launch({
+            headless: true, // Yeni headless rejimi
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--disable-software-rasterizer',
-                '--disable-features=VizDisplayCompositor'
+                '--font-render-hinting=none'
             ],
-            headless: true,
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+            //executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
         });
 
         const page = await browser.newPage();
