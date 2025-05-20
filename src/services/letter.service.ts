@@ -643,10 +643,13 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--disable-dev-shm-usage'
+                '--disable-software-rasterizer',
+                '--disable-features=VizDisplayCompositor'
             ],
-            headless: true // Fixed: Use boolean instead of 'new' string for older Puppeteer versions
+            headless: true,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
         });
 
         const page = await browser.newPage();

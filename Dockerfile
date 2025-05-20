@@ -1,19 +1,22 @@
-# Əsas image olaraq Node.js istifadə edirik. Puppeteer üçün daha stabil bir Node.js versiyası (məsələn, 18 və ya 20) tövsiyə olunur.
+# Əsas image olaraq Node.js istifadə edirik. Puppeteer üçün daha stabil bir Node.js versiyası
 FROM node:20
 
-# Konteyner daxilində iş qovluğunu təyin edirik. Tətbiqimizin faylları bura köçürüləcək.
+# Konteyner daxilində iş qovluğunu təyin edirik
 WORKDIR /app
 
-# package.json və package-lock.json (və ya yarn.lock) fayllarını konteynerə kopyalayırıq.
-# Bu, yalnız asılılıqları quraşdırarkən Docker-in cache-dən istifadə etməsinə imkan verir.
+# package.json və package-lock.json fayllarını konteynerə kopyalayırıq
 COPY package*.json ./
 
-# Sistem asılılıqlarını quraşdırırıq. Bu hissə Puppeteer (və Chromium) üçün çox vacibdir.
-# Render.com-da istifadə olunan Linux distribution-a uyğun olaraq bu paketlər fərqli ola bilər,
-# lakin aşağıdakılar Debian/Ubuntu əsaslı sistemlər üçün ümumi lazım olanlardır.
-# Puppeteer-in rəsmi GitHub reposunda daha dolğun bir siyahı tapa bilərsiniz:
-# https://github.com/puppeteer/puppeteer/blob/main/docs/troubleshooting.md#running-puppeteer-in-docker
-RUN apt-get update && apt-get install -y \
+# Chrome quraşdırılması üçün önəmli dəyişənlər
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+
+# Google Chrome-un repositoriyasını əlavə edirik və sistemin asılılıqlarını quraşdırırıq
+RUN apt-get update && apt-get install -y gnupg wget && \
+    wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list' && \
+    apt-get update && apt-get install -y \
+    google-chrome-stable \
     gconf-service \
     libasound2 \
     libatk1.0-0 \
@@ -49,35 +52,52 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
     libappindicator1 \
-    libnss3 \
     lsb-release \
     xdg-utils \
-    wget \
+    # Render.com üçün əlavə asılılıqlar
+    libgbm1 \
+    libdrm2 \
+    libxkbcommon0 \
+    libatspi2.0-0 \
+    libatk-bridge2.0-0 \
+    # Şrift paketləri PDF yaradılması üçün
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-thai-tlwg \
+    fonts-kacst \
+    fonts-freefont-ttf \
+    # Performans üçün əlavə paketlər
+    zlib1g \
+    fontconfig \
+    locales \
     --no-install-recommends && \
+    # Locale konfiqurasiyası (Unicode dəstəyi üçün)
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen && \
+    # Təmizləmə
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Node.js asılılıqlarını quraşdırırıq (npm install).
-# Puppeteer burada öz Chromium versiyasını yükləyəcək.
+# Node.js asılılıqlarını quraşdırırıq
 RUN npm install
 
-# Qalan tətbiq kodunu konteynerə kopyalayırıq.
+# Qalan tətbiq kodunu konteynerə kopyalayırıq
 COPY . .
 
 # dist qovluğunu təmizləyib yenidən build edirik
 RUN rm -rf dist || true && npm run build
 
-# Əgər tətbiqiniz bir portda dinləyirsə (məsələn, Express server), həmin portu ifşa edin.
-# Backend qovluğundakı koddan göründüyü kimi server 4000 portunda işləyir
+# Server portunu ifşa edirik
 EXPOSE 4000
 
-# Uploads qovluğu üçün volume yaradın
-RUN mkdir -p /app/uploads
-VOLUME ["/app/uploads"]
+# Lazımi qovluqları yaradırıq
+RUN mkdir -p /app/uploads /app/logs
 
-# Logs qovluğu üçün volume yaradın
-RUN mkdir -p /app/logs
-VOLUME ["/app/logs"]
+# Volume təyin edirik (dayanıqlı data saxlaması üçün)
+VOLUME ["/app/uploads", "/app/logs"]
 
-# Konteyner işə salındıqda çalışacaq əmri təyin edirik.
-# Backend qovluğunda "start" scripti ilə işə salır
+# Nümunə sənəd üçün qovluq yaradırıq
+RUN mkdir -p /app/temp && chmod 777 /app/temp
+
+# Tətbiqi işə salırıq
 CMD ["npm", "start"]
