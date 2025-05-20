@@ -2,11 +2,11 @@ FROM node:20
 
 WORKDIR /app
 
-# Puppeteer üçün açıq konfiqurasiya etmək
+# Chrome yerinə Puppeteer-in öz Chromium-unu istifadə edəcəyik
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
-ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
+ENV PUPPETEER_EXECUTABLE_PATH=""
 
-# Sistem asılılıqlarını quraşdırırıq - Puppeteer 24.x+ üçün yenilənmiş siyahı
+# Sistem asılılıqlarını quraşdırırıq
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
@@ -47,32 +47,35 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     wget \
     xdg-utils \
-    # Şrift faylları üçün əlavə paketlər
+    # Şriftlər
     fonts-noto-color-emoji \
     fonts-freefont-ttf \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Yaddaş limitini artırırıq - Puppeteer üçün vacibdir
-ENV NODE_OPTIONS=--max_old_space_size=4096
+# Node yaddaş limiti 
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Puppeteer üçün əlavə səviyyə təhlükəsizlik konfiqurasiyası
+# Puppeteer üçün əlavə dəyişənlər
 ENV PUPPETEER_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
 
 # package.json fayllarını kopyalayırıq
 COPY package*.json ./
 
+# Render.com üçün əlavə konfiqurasiya - Puppeteer 24.x versiyası ilə problemləri həll edir
+RUN npm config set puppeteer_skip_chromium_download false
+
 # Asılılıqları quraşdırırıq
 RUN npm install
 
-# Cache qovluğunu əvvəlcədən yaradıb icazələri düzəldirik
+# Cache qovluğunu yaradırıq və icazələri veririk
 RUN mkdir -p /app/.cache/puppeteer && \
     chmod -R 777 /app/.cache
 
 # Qalan tətbiq kodunu kopyalayırıq
 COPY . .
 
-# dist qovluğunu təmizləyib yenidən build edirik
+# Diqqət: Cache qovluğunu təmizləmək əvəzinə, daha sonra təyin edirik
 RUN rm -rf dist || true && npm run build
 
 # Lazımi qovluqları yaradırıq
@@ -85,10 +88,14 @@ EXPOSE 4000
 # Volume təyin edirik
 VOLUME ["/app/uploads", "/app/logs"]
 
-# Puppeteer-in quraşdırıldığını yoxlamaq üçün
-RUN node -e "console.log('Puppeteer version:', require('puppeteer').version)" && \
-    echo "Browser paths:" && \
-    ls -la $(npm list -g | head -n 1)/node_modules/puppeteer/.local-chromium/ 2>/dev/null || echo "No puppeteer chromium"
+# Puppeteer-in quraşdırıldığını və browser tapıldığını yoxlayırıq
+RUN node -e "const puppeteer = require('puppeteer'); console.log('Puppeteer Version:', puppeteer.version); console.log('Puppeteer Installation Path:', require('puppeteer')._preferredRevision, require('puppeteer')._packageVersion);"
+
+# Chromium yolunu yoxlayırıq
+RUN ls -la $(npm root)/puppeteer/.local-chromium/ || echo "Chromium path not found in normal location"
+
+# ƏN VACİB ADDIM: Puppeteer 24.x versiyası ilə render.com-da işləmək üçün xüsusi yoxlama skripti
+RUN node -e "const puppeteer = require('puppeteer'); (async () => { console.log('Testing puppeteer browser launch...'); try { const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] }); await browser.close(); console.log('Browser launched successfully!'); } catch (e) { console.error('Failed to launch browser:', e); process.exit(1); } })()"
 
 # Tətbiqi işə salırıq
 CMD ["npm", "start"]
