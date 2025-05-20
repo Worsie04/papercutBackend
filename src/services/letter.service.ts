@@ -164,7 +164,7 @@ export class LetterService {
           newLetter = await Letter.create({
             templateId,
             userId: submitterId,
-            formData, // FormData düzgün şəkildə saxlanılır
+            formData,
             name: name ?? template.name ?? `Letter from ${template.id.substring(0, 6)}`,
             logoUrl: logoUrl ?? null,
             signatureUrl: signatureUrl ?? null,
@@ -177,7 +177,7 @@ export class LetterService {
             qrCodeUrl: null,
             publicLink: null,
             finalSignedPdfUrl: null,
-            placements: null, // Əgər placements istifadə olunmursa, null olaraq qalır
+            placements: null,
           }, { transaction });
       
           // 5. Create LetterReviewer entries for all participants
@@ -319,7 +319,7 @@ export class LetterService {
                 {
                     model: User,
                     as: 'user', // Include the original submitter info
-                    attributes: ['id', 'firstName', 'lastName', 'email'] // Specify needed fields
+                    attributes: ['id', 'firstName', 'lastName', 'email','avatar'] // Specify needed fields
                 },
                 // Optionally include last action log or template info if needed for display
                 // { model: Template, as: 'template', attributes: ['id', 'name'] },
@@ -327,6 +327,7 @@ export class LetterService {
             ],
             order: [['createdAt', 'DESC']] // Order by creation date, newest first
         });
+        console.log(`Fetched ${letters} letters pending action for user ${userId}`);
         return letters;
     } catch (error) {
         console.error(`Error fetching letters pending action for user ${userId}:`, error);
@@ -336,7 +337,7 @@ export class LetterService {
     }
 }
 
-static async finalApproveLetter(letterId: string, userId: string, placements: PlacementInfoFinal[], comment?: string): Promise<Letter> {
+static async finalApproveLetter(letterId: string, userId: string, placements: PlacementInfoFinal[], comment?: string, name?: string): Promise<Letter> {
     if (!R2_PUB_URL) {
         throw new AppError(500, 'Server configuration error: R2 public URL is missing.');
     }
@@ -545,101 +546,268 @@ static async finalApproveLetter(letterId: string, userId: string, placements: Pl
 
 
 static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
-    const puppeteer = require('puppeteer'); // Bu sətri silin
     console.log("Starting HTML to PDF conversion");
 
-    // Metin içeriğini CSS ile güçlendirelim
-    const wrappedHtml = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <style>
-              body {
-                font-family: Arial, sans-serif;
-                font-size: 12pt;
-                color: #000000 !important;
-              }
-              p, div, span, h1, h2, h3, h4, h5, h6 {
-                color: #000000 !important;
-                visibility: visible !important;
-              }
-              /* Əgər istifadə edirsinizsə, əlavə stilləri bura əlavə edə bilərsiniz */
-              /* Məsələn, səhifə kənarlıqları üçün */
-              /* @page { margin: 1cm; } */
-            </style>
-          </head>
-          <body>${htmlContent}</body>
-        </html>
-    `;
+    // Preserve CKEditor specific styling
+    if (!htmlContent.includes('<!DOCTYPE html>')) {
+        htmlContent = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <meta charset="UTF-8">
+                <style>
+                  body {
+                    font-family: Arial, sans-serif;
+                    font-size: 12pt;
+                    color: #000000 !important;
+                    position: relative;
+                    line-height: 1.5;
+                    padding: 20px;
+                  }
+                  
+                  p, div, span, h1, h2, h3, h4, h5, h6 {
+                    color: #000000 !important;
+                    visibility: visible !important;
+                    margin-bottom: 8px;
+                  }
+                  
+                  /* Handle CKEditor image alignment classes */
+                  .image-style-align-right {
+                    float: right;
+                    margin-left: 20px;
+                    margin-bottom: 10px;
+                  }
+                  
+                  .image-style-align-left {
+                    float: left;
+                    margin-right: 20px;
+                    margin-bottom: 10px;
+                  }
+                  
+                  .image-style-align-center {
+                    margin-left: auto;
+                    margin-right: auto;
+                    display: block;
+                  }
+                  
+                  /* Control max image sizes */
+                  img {
+                    max-width: 300px !important;
+                    height: auto !important;
+                    object-fit: contain !important;
+                  }
+                  
+                  /* Support resized images */
+                  .image_resized {
+                    display: block;
+                    box-sizing: border-box;
+                  }
+                  
+                  .image_resized img {
+                    width: 100%;
+                    height: auto;
+                  }
+                  
+                  figure {
+                    display: table;
+                    margin: 1em 0;
+                  }
+                  
+                  figure.image {
+                    clear: both;
+                    text-align: center;
+                  }
+                  
+                  figure.image img {
+                    display: block;
+                    margin: 0 auto;
+                    max-width: 100%;
+                    min-width: 50px;
+                  }
+                  
+                  /* Set precise page dimensions */
+                  @page {
+                    margin: 1cm;
+                    size: A4;
+                  }
+                </style>
+              </head>
+              <body>${htmlContent}</body>
+            </html>
+        `;
+    }
 
-    let browser; // Browser dəyişənini try blokunun xaricində təyin edin ki, finally blokunda istifadə edə biləsiniz
+    let browser;
     try {
         browser = await puppeteer.launch({
-            // executablePath-ə ehtiyac yoxdur Docker konteynerində
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-gpu', // GPU sürətləndirməsini deaktiv et
-                '--disable-dev-shm-usage' // Paylaşılan yaddaş problemləri üçün
+                '--disable-gpu',
+                '--disable-dev-shm-usage'
             ],
-            headless: 'new' // Yeni headless rejimini istifadə et
+            headless: true // Fixed: Use boolean instead of 'new' string for older Puppeteer versions
         });
 
         const page = await browser.newPage();
-
-        // Sayfanın default timeout-unu artıra bilərsiniz (əgər lazımdırsa)
-        // await page.setDefaultNavigationTimeout(0); // limitsiz
-
-        await page.setContent(wrappedHtml, {
-            waitUntil: ['networkidle0', 'load']
-            // networkidle2 bəzən daha stabil ola bilər: ['networkidle2', 'load']
+        
+        // Set viewport size to match A4 dimensions
+        await page.setViewport({
+            width: 794, // A4 width in pixels (approximately)
+            height: 1123, // A4 height in pixels (approximately)
+            deviceScaleFactor: 1,
         });
 
-        // DOM elementlərini manipulyasiya etmək üçün evaluate
+        // Set longer timeout for content loading
+        await page.setDefaultNavigationTimeout(60000);
+        
+        // Wait longer for content to fully load
+        await page.setContent(htmlContent, {
+            waitUntil: ['networkidle0', 'load', 'domcontentloaded']
+        });
+
+        // Debug - take a screenshot to see how the page looks before PDF generation
+        // Uncomment if needed for debugging
+        // await page.screenshot({ path: 'debug-preview.png' });
+
+        // Ensure all images are loaded correctly
         await page.evaluate(() => {
-            // @ts-ignore - DOM elements exist in browser context
-            const elements = document.querySelectorAll('*');
-            for (let i = 0; i < elements.length; i++) {
-              // @ts-ignore
-              const el = elements[i];
-              // @ts-ignore
-              if (el.style) {
-                // @ts-ignore
-                el.style.color = '#000000';
-                // @ts-ignore
-                el.style.visibility = 'visible';
-              }
-            }
+            return new Promise<void>((resolve) => {
+                const images = Array.from(document.querySelectorAll('img'));
+                
+                if (images.length === 0) {
+                    resolve();
+                    return;
+                }
+                
+                let loadedImages = 0;
+                
+                images.forEach((img: HTMLImageElement) => {
+                    if (img.complete) {
+                        loadedImages++;
+                        if (loadedImages === images.length) {
+                            resolve();
+                        }
+                    } else {
+                        img.onload = () => {
+                            loadedImages++;
+                            if (loadedImages === images.length) {
+                                resolve();
+                            }
+                        };
+                        
+                        img.onerror = () => {
+                            console.warn(`Failed to load image: ${img.src}`);
+                            loadedImages++;
+                            if (loadedImages === images.length) {
+                                resolve();
+                            }
+                        };
+                    }
+                    
+                    // Apply specific styles for better PDF rendering
+                    if (img.parentElement && (img.parentElement as HTMLElement).classList.contains('image-style-align-right')) {
+                        img.style.float = 'right';
+                        img.style.marginLeft = '20px';
+                    } else if (img.parentElement && (img.parentElement as HTMLElement).classList.contains('image-style-align-left')) {
+                        img.style.float = 'left';
+                        img.style.marginRight = '20px';
+                    }
+                });
+            });
         });
 
+        // Apply CKEditor specific styling directly to elements
+        await page.evaluate(() => {
+            // Fix right-aligned images
+            const rightAlignedFigures = document.querySelectorAll('.image-style-align-right');
+            rightAlignedFigures.forEach((element) => {
+                // Type cast the element to HTMLElement
+                const fig = element as HTMLElement;
+                fig.style.float = 'right';
+                fig.style.marginLeft = '20px';
+                fig.style.marginBottom = '10px';
+            });
+            
+            // Fix left-aligned images
+            const leftAlignedFigures = document.querySelectorAll('.image-style-align-left');
+            leftAlignedFigures.forEach((element) => {
+                // Type cast the element to HTMLElement
+                const fig = element as HTMLElement;
+                fig.style.float = 'left';
+                fig.style.marginRight = '20px';
+                fig.style.marginBottom = '10px';
+            });
+            
+            // Fix centered images
+            const centeredFigures = document.querySelectorAll('.image-style-align-center');
+            centeredFigures.forEach((element) => {
+                // Type cast the element to HTMLElement
+                const fig = element as HTMLElement;
+                fig.style.marginLeft = 'auto';
+                fig.style.marginRight = 'auto';
+                fig.style.display = 'block';
+                fig.style.textAlign = 'center';
+            });
+            
+            // Fix resized images
+            const resizedImages = document.querySelectorAll('.image_resized');
+            resizedImages.forEach((element) => {
+                // Type cast the element to HTMLElement
+                const container = element as HTMLElement;
+                if (container.style.width) {
+                    // Keep the inline width from CKEditor
+                    const imgs = container.querySelectorAll('img');
+                    imgs.forEach((imgElement) => {
+                        const img = imgElement as HTMLImageElement;
+                        img.style.maxWidth = '100%';
+                        img.style.width = '100%';
+                        img.style.height = 'auto';
+                    });
+                }
+            });
+            
+            // Ensure all elements have proper text color
+            const allElements = document.querySelectorAll('*');
+            allElements.forEach((element) => {
+                const el = element as HTMLElement;
+                if (el.style) {
+                    el.style.color = '#000000';
+                    el.style.visibility = 'visible';
+                }
+            });
+        });
+
+        // Generate PDF with precise settings
         const pdfBuffer = await page.pdf({
             format: 'A4',
-            printBackground: true, // Arxa plan rənglərini/şəkillərini çap etmək üçün
-            margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' }
-            // DisplayHeaderFooter kimi əlavə seçimlər də burada təyin edilə bilər
+            printBackground: true,
+            margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' },
+            preferCSSPageSize: true,
+            displayHeaderFooter: false,
         });
 
         console.log(`PDF created successfully, size: ${pdfBuffer.length} bytes`);
-        return pdfBuffer;
+        // Convert Uint8Array to Buffer
+        return Buffer.from(pdfBuffer);
     } catch (error) {
         console.error('HTML to PDF conversion error:', error);
         throw new Error(`HTML to PDF conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-        // Error olsa belə browseri bağlamağı təmin etmək üçün finally bloku
         if (browser) {
             await browser.close();
         }
     }
 }
   
-  static async finalApproveLetterSingle(letterId: string, userId: string, placements: PlacementInfoFinal[], comment?: string): Promise<Letter> {
+static async finalApproveLetterSingle(letterId: string, userId: string, placements: PlacementInfoFinal[], comment?: string, name?:string): Promise<Letter> {
     if (!R2_PUB_URL) {
         throw new AppError(500, 'Server configuration error: R2 public URL is missing.');
     }
 
     const transaction = await sequelize.transaction();
     try {
+        // Fetch the letter with its template
         const letter = await Letter.findByPk(letterId, {
             transaction,
             include: [
@@ -652,6 +820,7 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             throw new AppError(404, `Letter not found: ${letterId}`);
         }
 
+        // Validate letter status and permissions
         if (letter.workflowStatus !== LetterWorkflowStatus.PENDING_APPROVAL) {
             await transaction.rollback();
             throw new AppError(400, `Letter must be in pending_approval status. Current status: ${letter.workflowStatus}`);
@@ -665,6 +834,7 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             throw new AppError(400, 'Cannot finalize approval: Template content is missing.');
         }
 
+        // Process template content - replace placeholders with actual values
         const templateContent = letter.template.content;
         let htmlContent = templateContent;
         if (letter.formData) {
@@ -673,6 +843,39 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             });
         }
 
+        // IMPROVED: Add custom CSS to prevent large logo issues and ensure proper element sizing
+        htmlContent = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <meta charset="UTF-8">
+                <style>
+                  body {
+                    font-family: Arial, sans-serif;
+                    font-size: 12pt;
+                    color: #000000 !important;
+                    position: relative;
+                  }
+                  p, div, span, h1, h2, h3, h4, h5, h6 {
+                    color: #000000 !important;
+                    visibility: visible !important;
+                  }
+                  img {
+                    max-width: 300px !important; /* Prevent oversized images */
+                    height: auto !important;
+                    object-fit: contain !important;
+                  }
+                  @page {
+                    margin: 1cm;
+                    size: A4;
+                  }
+                </style>
+              </head>
+              <body>${htmlContent}</body>
+            </html>
+        `;
+
+        // Convert HTML to PDF
         console.log(`Converting HTML to PDF for letter ${letterId}`);
         const pdfBuffer = await LetterService.convertHtmlToPdf(htmlContent);
         console.log(`PDF buffer created, size: ${pdfBuffer?.length || 0} bytes`);
@@ -681,6 +884,7 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             throw new AppError(500, "Failed to generate PDF from HTML - empty buffer returned");
         }
 
+        // Load the PDF and get pages
         const pdfDoc = await PDFDocument.load(pdfBuffer);
         console.log(`PDF document loaded successfully`);
 
@@ -691,182 +895,338 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             throw new AppError(500, "PDF document has no pages");
         }
 
-        // Embed signatures and stamps
-        for (const item of placements) {
-            if (item.type === 'signature' || item.type === 'stamp') {
-                if (item.pageNumber < 1 || item.pageNumber > pages.length) {
-                    console.warn(`Skipping placement: Invalid page ${item.pageNumber} for item ${item.type} in letter ${letterId}.`);
-                    continue;
-                }
-                if (!item.url) {
-                    console.warn(`Skipping image placement: URL missing for ${item.type} in letter ${letterId}`);
-                    continue;
-                }
+        // IMPROVED: Capture page dimensions for consistent positioning
+        const pageDetails = pages.map(page => {
+            const { width, height } = page.getSize();
+            return { width, height };
+        });
 
-                let imageBytes: Buffer | null = null;
+        // Get first page dimensions as reference
+        const refPageWidth = pageDetails[0].width;
+        const refPageHeight = pageDetails[0].height;
+        
+        // Group placements by type for better handling
+        const signatures = placements.filter(p => p.type === 'signature');
+        const stamps = placements.filter(p => p.type === 'stamp');
+        const qrCodes = placements.filter(p => p.type === 'qrcode');
+        
+        console.log(`Processing ${signatures.length} signatures, ${stamps.length} stamps, and ${qrCodes.length} QR codes`);
+
+        // Function to safely get page number (1-based), defaulting to 1 if invalid
+        const getSafePage = (pageNum?: number): number => {
+            if (!pageNum || pageNum < 1 || pageNum > pages.length) {
+                return 1;
+            }
+            return pageNum;
+        };
+
+        // IMPROVED: Fixed aspect ratio calculation
+        // 1. First process signatures
+        for (const signature of signatures) {
+            try {
+                // Skip invalid URLs
+                if (!signature.url || signature.url === 'QR_PLACEHOLDER') {
+                    console.warn(`Skipping signature: missing URL`);
+                    continue;
+                }
+                
+                // Determine page to place signature on
+                const pageIndex = getSafePage(signature.pageNumber) - 1;
+                const page = pages[pageIndex];
+                const { width: pageWidth, height: pageHeight } = page.getSize();
+                
+                // Get signature image
+                let imageBytes: Buffer;
                 try {
-                    if (item.url.startsWith('http')) {
-                        const response = await axios.get(item.url, { responseType: 'arraybuffer' });
+                    if (signature.url.startsWith('http')) {
+                        const response = await axios.get(signature.url, { responseType: 'arraybuffer' });
                         imageBytes = Buffer.from(response.data);
                     } else {
-                        imageBytes = await FileService.getFileBuffer(item.url);
-                    }
-                } catch (fetchError: any) {
-                    console.warn(`Skipping image placement for ${item.type} due to fetch error from ${item.url}: ${fetchError.message}`);
-                    continue;
-                }
-
-                if (!imageBytes) continue;
-
-                let pdfImage: PDFImage | null = null;
-                try {
-                    if (item.url.toLowerCase().endsWith('.png')) {
-                        pdfImage = await pdfDoc.embedPng(imageBytes);
-                    } else if (item.url.toLowerCase().endsWith('.jpg') || item.url.toLowerCase().endsWith('.jpeg')) {
-                        pdfImage = await pdfDoc.embedJpg(imageBytes);
-                    } else {
-                        try { pdfImage = await pdfDoc.embedPng(imageBytes); }
-                        catch (e) {
-                            try { pdfImage = await pdfDoc.embedJpg(imageBytes); }
-                            catch (e2) { console.warn(`Skipping placement: Unsupported image type for ${item.type} URL ${item.url}`); continue; }
+                        const fileBuffer = await FileService.getFileBuffer(signature.url);
+                        if (!fileBuffer) {
+                            throw new Error(`Failed to get file buffer for ${signature.url}`);
                         }
+                        imageBytes = fileBuffer;
                     }
-                } catch (embedError: any) {
-                    console.error(`Failed to embed image ${item.url} for ${item.type}: ${embedError.message}`);
+                } catch (error) {
+                    // Fixed: Type error handling for unknown error type
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    console.error(`Failed to load signature image: ${errorMessage}`);
                     continue;
                 }
-
-                if (!pdfImage) continue;
-                const page = pages[item.pageNumber - 1];
-                const { height: pageHeight, width: pageWidth } = page.getSize();
-
-                let x = item.x;
-                let y = item.y;
-                let width = item.width;
-                let height = item.height;
-
-                if (item.xPct !== undefined && item.yPct !== undefined && 
-                    item.widthPct !== undefined && item.heightPct !== undefined) {
-                    x = item.xPct * pageWidth;
-                    y = item.yPct * pageHeight;
-                    width = item.widthPct * pageWidth;
-                    height = item.heightPct * pageHeight;
-                }
-
-                // Preserve aspect ratio for stamps
-                if (item.type === 'stamp') {
-                    const originalWidth = pdfImage.width;
-                    const originalHeight = pdfImage.height;
-                    const aspectRatio = originalWidth / originalHeight;
-
-                    // Adjust dimensions to maintain aspect ratio
-                    // Use the provided width as the base, and calculate height
-                    const targetWidth = width;
-                    const targetHeight = targetWidth / aspectRatio;
-
-                    // If the calculated height exceeds the provided height, adjust width instead
-                    if (targetHeight > height) {
-                        height = height; // Use the provided height as the limit
-                        width = height * aspectRatio; // Recalculate width to maintain aspect ratio
-                    } else {
-                        width = targetWidth;
-                        height = targetHeight;
-                    }
-
-                    console.log(`Adjusted stamp dimensions for letter ${letterId}: original=${originalWidth}x${originalHeight}, target=${width}x${height}`);
-                }
-
-                const pdfY = pageHeight - y - height;
+                
+                // Embed image
+                let pdfImage: PDFImage;
                 try {
-                    page.drawImage(pdfImage, { 
-                        x: x, 
-                        y: pdfY, 
-                        width: width, 
-                        height: height 
-                    });
-                } catch (drawError: any) {
-                    console.error(`Failed to draw ${item.type} ${item.url} on page ${item.pageNumber}: ${drawError.message}`);
+                    // Try PNG first, then JPG
+                    try {
+                        pdfImage = await pdfDoc.embedPng(imageBytes);
+                    } catch {
+                        pdfImage = await pdfDoc.embedJpg(imageBytes);
+                    }
+                } catch (error) {
+                    // Fixed: Type error handling for unknown error type
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    console.error(`Failed to embed signature: ${errorMessage}`);
+                    continue;
                 }
+                
+                // CRITICAL FIX: Calculate exact position using percentages when available
+                let x: number, y: number, width: number, height: number;
+                
+                if (signature.xPct !== undefined && signature.yPct !== undefined) {
+                    // Use percentage values when available
+                    x = signature.xPct * pageWidth;
+                    y = signature.yPct * pageHeight;
+                    
+                    // For width and height, compute proportionally if percentages are available
+                    if (signature.widthPct !== undefined) {
+                        width = signature.widthPct * pageWidth;
+                    } else {
+                        width = 100; // Default signature width
+                    }
+                    
+                    if (signature.heightPct !== undefined) {
+                        height = signature.heightPct * pageHeight;
+                    } else {
+                        height = 40; // Default signature height
+                    }
+                } else {
+                    // Fall back to absolute values if available
+                    x = signature.x ?? 50;
+                    y = signature.y ?? 50;
+                    width = signature.width ?? 100;
+                    height = signature.height ?? 40;
+                }
+                
+                // Maintain aspect ratio for signature
+                const aspectRatio = pdfImage.width / pdfImage.height;
+                height = width / aspectRatio;
+                
+                // CRITICAL FIX: Convert y-coordinate from top-left (HTML) to bottom-left (PDF)
+                const pdfY = pageHeight - y - height;
+                
+                // Draw the signature
+                page.drawImage(pdfImage, {
+                    x: x,
+                    y: pdfY,
+                    width: width,
+                    height: height
+                });
+                
+                console.log(`Placed signature at (${x}, ${pdfY}) with size ${width}x${height} on page ${pageIndex + 1}`);
+                
+            } catch (error) {
+                // Fixed: Type error handling for unknown error type
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                console.error(`Error processing signature: ${errorMessage}`);
+            }
+        }
+        
+        // 2. Next process stamps (similar approach but different defaults)
+        for (const stamp of stamps) {
+            try {
+                // Skip invalid URLs
+                if (!stamp.url || stamp.url === 'QR_PLACEHOLDER') {
+                    console.warn(`Skipping stamp: missing URL`);
+                    continue;
+                }
+                
+                // Determine page to place stamp on
+                const pageIndex = getSafePage(stamp.pageNumber) - 1;
+                const page = pages[pageIndex];
+                const { width: pageWidth, height: pageHeight } = page.getSize();
+                
+                // Get stamp image
+                let imageBytes: Buffer;
+                try {
+                    if (stamp.url.startsWith('http')) {
+                        const response = await axios.get(stamp.url, { responseType: 'arraybuffer' });
+                        imageBytes = Buffer.from(response.data);
+                    } else {
+                        const fileBuffer = await FileService.getFileBuffer(stamp.url);
+                        if (!fileBuffer) {
+                            throw new Error(`Failed to get file buffer for ${stamp.url}`);
+                        }
+                        imageBytes = fileBuffer;
+                    }
+                } catch (error) {
+                    // Fixed: Type error handling for unknown error type
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    console.error(`Failed to load stamp image: ${errorMessage}`);
+                    continue;
+                }
+                
+                // Embed image
+                let pdfImage: PDFImage;
+                try {
+                    // Try PNG first, then JPG
+                    try {
+                        pdfImage = await pdfDoc.embedPng(imageBytes);
+                    } catch {
+                        pdfImage = await pdfDoc.embedJpg(imageBytes);
+                    }
+                } catch (error) {
+                    // Fixed: Type error handling for unknown error type
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    console.error(`Failed to embed stamp: ${errorMessage}`);
+                    continue;
+                }
+                
+                // Calculate position and size (for stamps, we make them square-ish)
+                let x: number, y: number, width: number, height: number;
+                
+                if (stamp.xPct !== undefined && stamp.yPct !== undefined) {
+                    // Use percentage values when available
+                    x = stamp.xPct * pageWidth;
+                    y = stamp.yPct * pageHeight;
+                    
+                    // For width and height, compute proportionally if percentages are available
+                    if (stamp.widthPct !== undefined) {
+                        width = stamp.widthPct * pageWidth;
+                    } else {
+                        width = 60; // Default stamp width
+                    }
+                    
+                    if (stamp.heightPct !== undefined) {
+                        height = stamp.heightPct * pageHeight;
+                    } else {
+                        height = 60; // Default stamp height
+                    }
+                } else {
+                    // Fall back to absolute values if available
+                    x = stamp.x ?? 50;
+                    y = stamp.y ?? 50;
+                    width = stamp.width ?? 60;
+                    height = stamp.height ?? 60;
+                }
+                
+                // Maintain aspect ratio for stamp
+                const aspectRatio = pdfImage.width / pdfImage.height;
+                const targetWidth = width;
+                const targetHeight = width / aspectRatio;
+                
+                // Ensure stamp fits within allocated space
+                if (targetHeight > height) {
+                    height = height;
+                    width = height * aspectRatio;
+                } else {
+                    width = targetWidth;
+                    height = targetHeight;
+                }
+                
+                // Convert y-coordinate from top-left (HTML) to bottom-left (PDF)
+                const pdfY = pageHeight - y - height;
+                
+                // Draw the stamp
+                page.drawImage(pdfImage, {
+                    x: x,
+                    y: pdfY,
+                    width: width,
+                    height: height
+                });
+                
+                console.log(`Placed stamp at (${x}, ${pdfY}) with size ${width}x${height} on page ${pageIndex + 1}`);
+                
+            } catch (error) {
+                // Fixed: Type error handling for unknown error type
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                console.error(`Error processing stamp: ${errorMessage}`);
             }
         }
 
-        // Generate and embed QR code (unchanged from previous fix)
+        // 3. Process QR codes
+        // Generate QR code for letter URL
         const finalPdfKey = `final-letters/letter-${letter.id}-final-approved.pdf`;
         const finalPdfPublicUrl = `https://${R2_PUB_URL}/${finalPdfKey}`;
+        
         const qrCodeBuffer = await QRCode.toBuffer(finalPdfPublicUrl, {
-            errorCorrectionLevel: 'H', 
-            type: 'png', 
-            margin: 1, 
+            errorCorrectionLevel: 'H',
+            type: 'png',
+            margin: 1,
             color: { dark: '#000000', light: '#FFFFFF' },
+            scale: 10  // Higher scale for better quality
         });
+        
         const qrImageEmbed = await pdfDoc.embedPng(qrCodeBuffer);
-
-        const qrPlacements = placements.filter(p => p.type === 'qrcode');
-        console.log(`Found ${qrPlacements.length} QR code placements for letter ${letterId}`);
-
-        if (qrPlacements.length > 0) {
-            for (const qrPlace of qrPlacements) {
-                if (typeof qrPlace.x === 'undefined' || typeof qrPlace.y === 'undefined' || 
-                    typeof qrPlace.width === 'undefined' || typeof qrPlace.height === 'undefined') {
-                    console.warn(`QR placement missing coordinates, using default position instead`);
-                    continue;
+        
+        // Place QR codes at specified positions
+        if (qrCodes.length > 0) {
+            for (const qrCode of qrCodes) {
+                try {
+                    // Determine page to place QR code on
+                    const pageIndex = getSafePage(qrCode.pageNumber) - 1;
+                    const page = pages[pageIndex];
+                    const { width: pageWidth, height: pageHeight } = page.getSize();
+                    
+                    // Calculate position and fixed size for QR code
+                    let x: number, y: number;
+                    let width = 50;  // Fixed QR code size
+                    let height = 50;
+                    
+                    if (qrCode.xPct !== undefined && qrCode.yPct !== undefined) {
+                        // Use percentage values when available
+                        x = qrCode.xPct * pageWidth;
+                        y = qrCode.yPct * pageHeight;
+                        
+                        // For width and height, compute proportionally if percentages are available
+                        if (qrCode.widthPct !== undefined) {
+                            width = qrCode.widthPct * pageWidth;
+                            height = width; // Keep QR code square
+                        }
+                    } else {
+                        // Fall back to absolute values if available
+                        x = qrCode.x ?? (pageWidth - 70); // Default to right side
+                        y = qrCode.y ?? 20;              // Default to near bottom
+                        width = qrCode.width ?? 50;
+                        height = width; // Keep QR code square
+                    }
+                    
+                    // Convert y-coordinate from top-left (HTML) to bottom-left (PDF)
+                    const pdfY = pageHeight - y - height;
+                    
+                    // Draw the QR code
+                    page.drawImage(qrImageEmbed, {
+                        x: x,
+                        y: pdfY,
+                        width: width,
+                        height: height
+                    });
+                    
+                    console.log(`Placed QR code at (${x}, ${pdfY}) with size ${width}x${height} on page ${pageIndex + 1}`);
+                    
+                } catch (error) {
+                    // Fixed: Type error handling for unknown error type
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    console.error(`Error processing QR code: ${errorMessage}`);
                 }
-
-                if (qrPlace.pageNumber < 1 || qrPlace.pageNumber > pages.length) {
-                    console.warn(`QR placeholder on invalid page ${qrPlace.pageNumber} for letter ${letter.id}, skipping.`);
-                    continue;
-                }
-
-                const page = pages[qrPlace.pageNumber - 1];
-                if (!page) {
-                    console.warn(`Page ${qrPlace.pageNumber} is undefined`);
-                    continue;
-                }
-
-                const pageSize = page.getSize();
-                const { height: pageHeight, width: pageWidth } = pageSize;
-
-                let x = qrPlace.x;
-                let y = qrPlace.y;
-                let width = 50;
-                let height = 50;
-
-                if (qrPlace.xPct !== undefined && qrPlace.yPct !== undefined) {
-                    x = qrPlace.xPct * pageWidth;
-                    y = qrPlace.yPct * pageHeight;
-                }
-
-                const qrY = pageHeight - y - height;
-                console.log(`Embedding QR code on page ${qrPlace.pageNumber} at coordinates: (${x}, ${qrY}), size: ${width}x${height}`);
-
-                page.drawImage(qrImageEmbed, {
-                    x: x,
-                    y: qrY,
-                    width: width,
-                    height: height,
-                });
             }
         } else {
-            console.warn(`No QR code placeholder found for letter ${letterId}. Placing QR at default position (last page, bottom-right).`);
+            // Default QR placement if none specified
+            console.warn(`No QR code placement specified for letter ${letterId}, using default position`);
             const lastPage = pages[pages.length - 1];
-            const { width, height } = lastPage.getSize();
+            const { width: pageWidth, height: pageHeight } = lastPage.getSize();
             const qrSize = 50;
             const margin = 20;
+            
             lastPage.drawImage(qrImageEmbed, { 
-                x: width - qrSize - margin, 
-                y: margin, 
+                x: pageWidth - qrSize - margin, 
+                y: margin, // Bottom margin in PDF coordinates
                 width: qrSize, 
                 height: qrSize 
             });
         }
 
+        // Save the PDF and upload to storage
         const finalPdfBytes = await pdfDoc.save();
         await FileService.uploadBuffer(Buffer.from(finalPdfBytes), finalPdfKey, 'application/pdf');
 
+        // Save the QR code image separately
         const qrCodeImageFileName = `qr-images/letter-${letter.id}-qr.png`;
         const uploadedQrImageR2 = await FileService.uploadBuffer(qrCodeBuffer, qrCodeImageFileName, 'image/png');
         const qrCodeImageUrl = uploadedQrImageR2?.url;
 
+        // Update the letter record
         await letter.update({
             workflowStatus: LetterWorkflowStatus.APPROVED,
             nextActionById: null,
@@ -874,9 +1234,11 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             finalSignedPdfUrl: finalPdfKey,
             publicLink: finalPdfPublicUrl,
             qrCodeUrl: qrCodeImageUrl,
-            placements: placements,
+            placements: placements, // Store the placements for future reference
+            name: name || letter.name,
         }, { transaction });
 
+        // Create an action log
         await LetterActionLog.create({
             letterId,
             userId,
@@ -884,6 +1246,7 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             comment: comment || 'Letter finally approved.',
         }, { transaction });
 
+        // Log the activity
         await ActivityService.logActivity({
             userId,
             action: ActivityType.APPROVE,
@@ -894,8 +1257,10 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
             transaction
         });
 
+        // Commit the transaction
         await transaction.commit();
 
+        // Send notifications
         try {
             const submitter = await User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
             const approver = await User.findByPk(userId, { attributes: ['firstName', 'lastName', 'email'] });
@@ -923,9 +1288,11 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
                 );
             }
         } catch (notificationError) {
-            console.error(`Error sending final approval notification for letter ${letterId}:`, notificationError);
+            console.error(`Error sending notification: ${notificationError}`);
+            // Don't fail if notifications fail
         }
 
+        // Return the full letter with associations
         const result = await Letter.findByPk(letterId, {
             include: [
                 { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
@@ -948,7 +1315,7 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
                 await transaction.rollback(); 
                 console.log(`Transaction rolled back for letter ${letterId} due to error.`);
             } catch (rbError: any) {
-                console.error(`Error rolling back transaction for letter ${letterId}:`, rbError);
+                console.error(`Error rolling back transaction: ${rbError.message}`);
             }
         }
 
@@ -960,15 +1327,35 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
   static async getAllByUserId(userId: string): Promise<Letter[]> {
      if (!userId) { throw new AppError(401,'User ID is required.'); }
      try {
-       const letters = await Letter.findAll({
+       // Get unique letter IDs from action logs where this user was involved
+       const letterIdsFromActionLogs = await LetterActionLog.findAll({
          where: { userId },
-         include: [ { model: Template, as: 'template', attributes: ['id', 'name'], required: false }, ],
-         attributes: ['id', 'name', 'templateId', 'userId', 'logoUrl', 'signatureUrl', 'stampUrl', 'signedPdfUrl', 'workflowStatus', 'createdAt', 'updatedAt'],
+         attributes: ['letterId'],
+         group: ['letterId'],
+       }).then(logs => logs.map(log => log.letterId));
+       
+       
+       // Combine all letter IDs from different sources
+       const allLetterIds = [...new Set([...letterIdsFromActionLogs])];
+       
+       // Find letters where user is creator OR user participated in workflow OR user was a reviewer/approver
+       const letters = await Letter.findAll({
+         where: {
+           [Op.or]: [
+             { userId },  // User is creator
+             { id: { [Op.in]: allLetterIds } }  // User participated in workflow or was assigned as reviewer/approver
+           ]
+         },
+         include: [ 
+           { model: Template, as: 'template', attributes: ['id', 'name'], required: false },
+           { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'], required: false }
+         ],
+         attributes: ['id', 'name', 'templateId', 'userId', 'logoUrl', 'signatureUrl', 'stampUrl', 'signedPdfUrl', 'workflowStatus', 'finalSignedPdfUrl', 'qrCodeUrl', 'createdAt', 'updatedAt'],
          order: [['createdAt', 'DESC']],
        });
        return letters;
      } catch (error) { console.error(`Error getting letters for user ${userId}:`, error); throw error; }
-  }
+    }
 
   static async findById(id: string, requestingUserId: string): Promise<Letter> {
     if (!id || !requestingUserId) {
@@ -1238,7 +1625,7 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
      } catch (error) { console.error(`Service: Error generating signed view URL for letter ${letterId}:`, error); if (error instanceof AppError) throw error; throw new AppError(500, 'Could not generate view URL for the signed PDF.'); }
   }
 
-   static async approveStep(letterId: string, userId: string, comment?: string): Promise<Letter> {
+   static async approveStep(letterId: string, userId: string, comment?: string, name?: string): Promise<Letter> {
        const transaction = await sequelize.transaction();
        try {
            const letter = await Letter.findByPk(letterId, { transaction });
@@ -1309,7 +1696,8 @@ static async convertHtmlToPdf(htmlContent: string): Promise<Buffer> {
            await letter.update({
                workflowStatus: nextStatus,
                currentStepIndex: nextStep,
-               nextActionById: nextActor
+               nextActionById: nextActor,
+               name: name || letter.name,
            }, { transaction });
 
            await ActivityService.logActivity({

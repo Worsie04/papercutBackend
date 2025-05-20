@@ -177,7 +177,7 @@ export class AuthController {
       
       // If no token is found, return empty user object (not authenticated)
       if (!token) {
-        return res.status(200).json({ user: null });
+        return res.status(200).json({ user: null, accessToken: null });
       }
 
       try {
@@ -186,10 +186,10 @@ export class AuthController {
         
         // Get user data
         const user = await AuthService.getUser(decoded.id, decoded.type as 'user' | 'admin');
-        return res.json({ user });
+        return res.json({ user, accessToken: token }); // Return user and the token
       } catch (error) {
         // If token verification fails, return empty user object
-        return res.status(200).json({ user: null });
+        return res.status(200).json({ user: null, accessToken: null });
       }
     } catch (error) {
       next(error);

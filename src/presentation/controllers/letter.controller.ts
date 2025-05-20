@@ -45,6 +45,7 @@ interface PlacementInfoFinal {
 interface FinalApprovePayload {
     comment?: string;
     placements: PlacementInfoFinal[];
+    name?: string; 
 }
 
 interface FinalRejectPayload {
@@ -64,9 +65,13 @@ export class LetterController {
       const authenticatedReq = req as AuthenticatedRequest;
       const userId = authenticatedReq.user?.id;
       if (!userId) { return next(new AppError(401,'Authentication required.')); }
+
       const { templateId, formData, name } = req.body as { templateId: string; formData: LetterFormData; name?: string; };
+      
       if (!templateId || !formData) { return next(new AppError(400,'Missing required fields: templateId and formData.')); }
+      
       const { logoUrl, signatureUrl, stampUrl, ...coreFormData } = formData;
+      
       const newLetter = await LetterService.create({
         templateId, userId, formData: coreFormData, name,
         logoUrl: logoUrl ?? null, signatureUrl: signatureUrl ?? null, stampUrl: stampUrl ?? null,
@@ -183,12 +188,12 @@ export class LetterController {
        const authenticatedReq = req as AuthenticatedRequest;
        const reviewerUserId = authenticatedReq.user?.id;
        const letterId = req.params.id;
-       const { comment } = req.body;
+       const { comment,name } = req.body;
        if (!reviewerUserId) { return next(new AppError(401, 'Authentication required.')); }
        if (!letterId) { return next(new AppError(400, 'Letter ID parameter is required.')); }
        if (comment && typeof comment !== 'string') { return next(new AppError(400, 'Invalid comment format.')); }
        // --- TODO: Change this to call the new approveStep service method ---
-       const updatedLetter = await LetterService.approveStep(letterId, reviewerUserId, comment);
+       const updatedLetter = await LetterService.approveStep(letterId, reviewerUserId, comment,name);
        res.status(200).json({ message: 'Letter review approved successfully.', letter: updatedLetter });
      } catch (error) { next(error); }
   }
@@ -264,15 +269,15 @@ static async finalApproveLetterSingle(req: Request, res: Response, next: NextFun
       const authenticatedReq = req as AuthenticatedRequest;
       const userId = authenticatedReq.user?.id;
       const letterId = req.params.id;
-      const { comment, placements } = req.body as FinalApprovePayload;
+      const { comment, placements, name } = req.body as FinalApprovePayload;
 
       if (!userId) return next(new AppError(401, 'Authentication required.'));
       if (!letterId) return next(new AppError(400, 'Letter ID parameter is required.'));
+
       if (!placements || !Array.isArray(placements)) {
           return next(new AppError(400, 'Placements array is required for final approval'));
       }
 
-      console.log("Received placements:", JSON.stringify(placements));
 
       const validatedPlacements = placements.map(p => ({
           ...p,
@@ -283,7 +288,7 @@ static async finalApproveLetterSingle(req: Request, res: Response, next: NextFun
           pageNumber: typeof p.pageNumber === 'number' ? p.pageNumber : 1
       }));
 
-      const approvedLetter = await LetterService.finalApproveLetterSingle(letterId, userId, validatedPlacements, comment);
+      const approvedLetter = await LetterService.finalApproveLetterSingle(letterId, userId, validatedPlacements, comment, name);
 
       res.status(200).json({ message: 'Letter finally approved successfully.', letter: approvedLetter });
   } catch (error) {
