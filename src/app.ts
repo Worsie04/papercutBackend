@@ -82,11 +82,15 @@ app.use(cors({
         // In production, we'll be permissive but log the issue
         return callback(null, true);
       }
+
+      
     } catch (err) {
       console.error(`Error parsing origin: ${origin}`, err);
       // Allow in case of parsing errors to avoid breaking functionality
       return callback(null, true);
     }
+
+    
   },
   credentials: true, // Critical for cross-origin cookies
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -121,18 +125,32 @@ app.use(cookieParser());
 // app.use(limiter);
 
 // Session middleware
+// app.use(session({
+//   secret: config.session.secret,
+//   resave: false,
+//   saveUninitialized: false,
+//   cookie: {
+//     secure: config.nodeEnv === 'production',
+//     httpOnly: true,
+//     maxAge: config.session.maxAge,
+//     sameSite: config.nodeEnv === 'production' ? 'none' : 'lax',
+//     path: '/'
+//   }
+// }));
+
 app.use(session({
   secret: config.session.secret,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: config.nodeEnv === 'production',
+    secure: process.env.NODE_ENV === 'production', // Development-də false, Production-da true
     httpOnly: true,
     maxAge: config.session.maxAge,
-    sameSite: config.nodeEnv === 'production' ? 'none' : 'lax',
-    path: '/'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    domain: process.env.NODE_ENV === 'production' ? '.papercut.website' : undefined
   }
 }));
+
 
 // Logging middleware
 app.use(requestLogger);

@@ -116,16 +116,30 @@ app.use((0, cookie_parser_1.default)());
 // });
 // app.use(limiter);
 // Session middleware
+// app.use(session({
+//   secret: config.session.secret,
+//   resave: false,
+//   saveUninitialized: false,
+//   cookie: {
+//     secure: config.nodeEnv === 'production',
+//     httpOnly: true,
+//     maxAge: config.session.maxAge,
+//     sameSite: config.nodeEnv === 'production' ? 'none' : 'lax',
+//     path: '/'
+//   }
+// }));
 app.use((0, express_session_1.default)({
     secret: config_1.config.session.secret,
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: config_1.config.nodeEnv === 'production',
+        secure: true, // Həmişə true olsun
         httpOnly: true,
         maxAge: config_1.config.session.maxAge,
-        sameSite: config_1.config.nodeEnv === 'production' ? 'none' : 'lax',
-        path: '/'
+        sameSite: 'none', // Cross-domain üçün 'none' olmalıdır
+        path: '/',
+        domain: process.env.NODE_ENV === 'production' ?
+            '.papercut.website' : undefined // Əsas domain, alt-domainləri də əhatə edir
     }
 }));
 // Logging middleware
