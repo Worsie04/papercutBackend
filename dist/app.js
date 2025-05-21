@@ -133,13 +133,11 @@ app.use((0, express_session_1.default)({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: true, // Həmişə true olsun
+        secure: process.env.NODE_ENV === 'production', // Development-də false, Production-da true
         httpOnly: true,
         maxAge: config_1.config.session.maxAge,
-        sameSite: 'none', // Cross-domain üçün 'none' olmalıdır
-        path: '/',
-        domain: process.env.NODE_ENV === 'production' ?
-            '.papercut.website' : undefined // Əsas domain, alt-domainləri də əhatə edir
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        domain: process.env.NODE_ENV === 'production' ? '.papercut.website' : undefined
     }
 }));
 // Logging middleware
