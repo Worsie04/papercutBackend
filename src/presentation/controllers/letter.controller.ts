@@ -21,6 +21,7 @@ interface CreateFromPdfPayload {
   reviewers: string[];
   approver?: string | null;
   name?: string;
+  comment?: string; // ADDED: mandatory comment field
 }
 
 // --- Added Interfaces for new request bodies ---
@@ -65,8 +66,8 @@ export class LetterController {
       const authenticatedReq = req as AuthenticatedRequest;
       const userId = authenticatedReq.user?.id;
       if (!userId) { return next(new AppError(401,'Authentication required.')); }
-
-      const { templateId, formData, name } = req.body as { templateId: string; formData: LetterFormData; name?: string; };
+      
+      const { templateId, formData, name, comment } = req.body as { templateId: string; formData: LetterFormData; name?: string; comment?: string; };
       
       if (!templateId || !formData) { return next(new AppError(400,'Missing required fields: templateId and formData.')); }
       
@@ -75,6 +76,7 @@ export class LetterController {
       const newLetter = await LetterService.create({
         templateId, userId, formData: coreFormData, name,
         logoUrl: logoUrl ?? null, signatureUrl: signatureUrl ?? null, stampUrl: stampUrl ?? null,
+        comment: comment?.trim()
       });
       res.status(201).json(newLetter);
     } catch (error) { next(error); }
@@ -119,7 +121,7 @@ export class LetterController {
         const authenticatedReq = req as AuthenticatedRequest;
         const userId = authenticatedReq.user?.id;
         if (!userId) { return next(new AppError(401, 'Authentication required.')); }
-        const { originalFileId, placements, name, reviewers, approver } = req.body as CreateFromPdfPayload;
+        const { originalFileId, placements, name, reviewers, approver, comment } = req.body as CreateFromPdfPayload;
         if (!originalFileId || !placements || !Array.isArray(placements) || placements.length === 0 || !reviewers || !Array.isArray(reviewers) || reviewers.length === 0) {
             return next(new AppError(400, 'Missing required fields: originalFileId, placements array, and a non-empty reviewers array.'));
         }
@@ -137,7 +139,8 @@ export class LetterController {
         const newSignedLetter = await LetterService.createFromPdfInteractive({
             originalFileId, placements, userId, reviewers,
             approver: approver ?? null,
-            name: name ?? `Signed Document ${new Date().toISOString().split('T')[0]}`
+            name: name ?? `Signed Document ${new Date().toISOString().split('T')[0]}`,
+            comment: comment?.trim() // ADDED: pass the comment to the service
         });
         res.status(201).json(newSignedLetter);
     } catch (error) { console.error('Error in createFromPdfInteractive controller:', error); next(error); }

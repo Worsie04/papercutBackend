@@ -49,6 +49,7 @@ interface CreateLetterData {
   logoUrl?: string | null;
   signatureUrl?: string | null;
   stampUrl?: string | null;
+  comment?: string;
 }
 
 interface PlacementInfo {
@@ -81,13 +82,14 @@ interface CreateFromPdfData {
   reviewers: string[];
   approver?: string | null;
   name?: string | null;
+  comment?: string; // ADDED: mandatory comment field
 }
 
 
 export class LetterService {
 
     static async create(data: CreateLetterData): Promise<Letter> {
-        const { templateId, userId: submitterId, formData, name, logoUrl, signatureUrl, stampUrl } = data;
+        const { templateId, userId: submitterId, formData, name, logoUrl, signatureUrl, stampUrl, comment } = data;
       
         if (!templateId) {
           throw new AppError(400, 'Template ID is required when creating a letter from a template.');
@@ -194,7 +196,7 @@ export class LetterService {
             letterId: newLetter.id,
             userId: submitterId,
             actionType: LetterActionType.SUBMIT,
-            comment: 'Letter submitted from template.',
+            comment: comment || 'Letter submitted from template.',
             details: {
               templateId: templateId,
               initialStatus: initialStatus,
@@ -1404,7 +1406,7 @@ static async finalApproveLetterSingle(letterId: string, userId: string, placemen
   }
 
   static async createFromPdfInteractive(data: CreateFromPdfData): Promise<Letter> {
-    const { originalFileId, placements, userId, reviewers, approver, name } = data;
+    const { originalFileId, placements, userId, reviewers, approver, name, comment } = data;
     let transaction: Transaction | null = null;
 
     if (!reviewers || reviewers.length === 0) {
@@ -1524,7 +1526,7 @@ static async finalApproveLetterSingle(letterId: string, userId: string, placemen
             letterId: newLetter.id,
             userId: userId,
             actionType: LetterActionType.SUBMIT,
-            comment: 'Letter submitted for review (interactive PDF).',
+            comment: comment || 'Letter submitted for review (interactive PDF).', // Use provided comment or default
             details: { initialReviewerId: reviewers[0], placementsCount: placements.length }
         }, { transaction });
 
