@@ -26,6 +26,7 @@ router.post('/:id/reject-review', LetterController.rejectLetterReview);
 router.post('/:id/resubmit', LetterController.resubmitRejectedLetter);
 router.post('/:id/final-approve', LetterController.finalApproveLetter);
 router.post('/:id/final-approve-letter', LetterController.finalApproveLetterSingle);
+router.post('/:id/final-reject', LetterController.finalRejectLetter);
 
 
 export default router;

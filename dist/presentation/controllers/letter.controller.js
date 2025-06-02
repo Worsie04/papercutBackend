@@ -335,9 +335,8 @@ class LetterController {
             if (!reason || typeof reason !== 'string') {
                 return next(new errorHandler_1.AppError(400, 'Rejection reason is required.'));
             }
-            // --- TODO: Implement LetterService.finalReject ---
-            // const rejectedLetter = await LetterService.finalReject(letterId, userId, reason);
-            // res.status(200).json({ message: 'Letter finally rejected successfully.', letter: rejectedLetter });
+            const rejectedLetter = await letter_service_1.LetterService.finalReject(letterId, userId, reason);
+            res.status(200).json({ message: 'Letter finally rejected successfully.', letter: rejectedLetter });
             // Placeholder response
             res.status(501).json({ message: 'Final reject service method not yet implemented.' });
         }

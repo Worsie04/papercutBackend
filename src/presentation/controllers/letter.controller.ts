@@ -315,9 +315,9 @@ static async finalApproveLetterSingle(req: Request, res: Response, next: NextFun
           if (!letterId) { return next(new AppError(400, 'Letter ID parameter is required.')); }
           if (!reason || typeof reason !== 'string') { return next(new AppError(400, 'Rejection reason is required.')); }
 
-          // --- TODO: Implement LetterService.finalReject ---
-          // const rejectedLetter = await LetterService.finalReject(letterId, userId, reason);
-          // res.status(200).json({ message: 'Letter finally rejected successfully.', letter: rejectedLetter });
+
+          const rejectedLetter = await LetterService.finalReject(letterId, userId, reason);
+          res.status(200).json({ message: 'Letter finally rejected successfully.', letter: rejectedLetter });
 
            // Placeholder response
            res.status(501).json({ message: 'Final reject service method not yet implemented.' });
