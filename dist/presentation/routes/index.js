@@ -25,6 +25,8 @@ const upload_routes_1 = __importDefault(require("./upload.routes"));
 const publicLetter_routes_1 = __importDefault(require("./publicLetter.routes"));
 const placeholder_routes_1 = __importDefault(require("./placeholder.routes"));
 const image_routes_1 = __importDefault(require("./image.routes"));
+const signature_routes_1 = __importDefault(require("./signature.routes"));
+const stamp_routes_1 = __importDefault(require("./stamp.routes"));
 const router = (0, express_1.Router)();
 router.use('/public/letters', publicLetter_routes_1.default);
 // API version prefix
@@ -50,6 +52,8 @@ router.use(`${API_VERSION}/letters`, letter_routes_1.default);
 router.use(`${API_VERSION}/uploads`, upload_routes_1.default);
 router.use(`${API_VERSION}/placeholders`, placeholder_routes_1.default);
 router.use(`${API_VERSION}/images`, image_routes_1.default);
+router.use(`${API_VERSION}/signatures`, signature_routes_1.default);
+router.use(`${API_VERSION}/stamps`, stamp_routes_1.default);
 // Health check endpoint
 router.get(`${API_VERSION}/health`, (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

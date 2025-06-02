@@ -31,11 +31,11 @@ export class PlaceholderController {
       if (!userId) {
         return next(new AppError(StatusCodes.UNAUTHORIZED, 'Authentication required.'));
       }
-      const { name, type, initialValue } = req.body;
+      const { name,orgName, type, initialValue } = req.body;
       if (!name || !type) {
         return next(new AppError(StatusCodes.BAD_REQUEST, 'Name and type are required.'));
       }
-      const newPlaceholder = await placeholderService.create(userId, { name, type, initialValue });
+      const newPlaceholder = await placeholderService.create(userId, { name,orgName, type, initialValue });
       res.status(StatusCodes.CREATED).json(newPlaceholder);
     } catch (error) {
       next(error);
@@ -73,6 +73,32 @@ export class PlaceholderController {
       }
       const updatedPlaceholder = await placeholderService.updateById(userId, placeholderId, { name, type, initialValue });
       res.status(StatusCodes.OK).json(updatedPlaceholder);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async checkAndFindPlaceholder(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?.id;
+      const placeholderName = req.params.placeholderName;
+      if (!userId) {
+        return next(new AppError(StatusCodes.UNAUTHORIZED, 'Authentication required.'));
+      }
+
+      const placeholder = await placeholderService.checkAndFindPlaceholder(placeholderName);
+      
+      if (!placeholder) {
+        return res.status(StatusCodes.NOT_FOUND).json({ 
+          error: `Placeholder "${placeholderName}" not found.`,
+          found: false 
+        });
+      }
+      
+      res.status(StatusCodes.OK).json({ 
+        ...placeholder,
+        found: true 
+      });
     } catch (error) {
       next(error);
     }

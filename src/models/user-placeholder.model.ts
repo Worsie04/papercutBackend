@@ -7,6 +7,7 @@ export class UserPlaceholder extends Model {
   public id!: string;
   public userId!: string;
   public name!: string;
+  public orgName!: string;
   public type!: string;
   public initialValue?: string | null; // Renamed from defaultValue
   public readonly createdAt!: Date;
@@ -40,6 +41,10 @@ UserPlaceholder.init(
       onDelete: 'CASCADE',
     },
     name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    orgName: {
       type: DataTypes.STRING,
       allowNull: false,
     },

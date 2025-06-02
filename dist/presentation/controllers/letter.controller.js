@@ -23,7 +23,7 @@ class LetterController {
             if (!userId) {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
-            const { templateId, formData, name } = req.body;
+            const { templateId, formData, name, comment } = req.body;
             if (!templateId || !formData) {
                 return next(new errorHandler_1.AppError(400, 'Missing required fields: templateId and formData.'));
             }
@@ -31,6 +31,7 @@ class LetterController {
             const newLetter = await letter_service_1.LetterService.create({
                 templateId, userId, formData: coreFormData, name,
                 logoUrl: logoUrl !== null && logoUrl !== void 0 ? logoUrl : null, signatureUrl: signatureUrl !== null && signatureUrl !== void 0 ? signatureUrl : null, stampUrl: stampUrl !== null && stampUrl !== void 0 ? stampUrl : null,
+                comment: comment === null || comment === void 0 ? void 0 : comment.trim()
             });
             res.status(201).json(newLetter);
         }
@@ -109,7 +110,7 @@ class LetterController {
             if (!userId) {
                 return next(new errorHandler_1.AppError(401, 'Authentication required.'));
             }
-            const { originalFileId, placements, name, reviewers, approver } = req.body;
+            const { originalFileId, placements, name, reviewers, approver, comment } = req.body;
             if (!originalFileId || !placements || !Array.isArray(placements) || placements.length === 0 || !reviewers || !Array.isArray(reviewers) || reviewers.length === 0) {
                 return next(new errorHandler_1.AppError(400, 'Missing required fields: originalFileId, placements array, and a non-empty reviewers array.'));
             }
@@ -117,6 +118,10 @@ class LetterController {
                 if (!p.type || !p.url || p.pageNumber == null || p.x == null || p.y == null || p.width == null || p.height == null) {
                     return next(new errorHandler_1.AppError(400, 'Invalid placement object structure.'));
                 }
+            }
+            // Reject payloads containing QR code placements
+            if (placements.some(p => p.type === 'qrcode')) {
+                return next(new errorHandler_1.AppError(400, 'QR code placements are not allowed in interactive PDF creation.'));
             }
             if (!reviewers.every(id => typeof id === 'string')) {
                 return next(new errorHandler_1.AppError(400, 'Invalid reviewers format. Expecting an array of strings (User IDs).'));
@@ -127,7 +132,8 @@ class LetterController {
             const newSignedLetter = await letter_service_1.LetterService.createFromPdfInteractive({
                 originalFileId, placements, userId, reviewers,
                 approver: approver !== null && approver !== void 0 ? approver : null,
-                name: name !== null && name !== void 0 ? name : `Signed Document ${new Date().toISOString().split('T')[0]}`
+                name: name !== null && name !== void 0 ? name : `Signed Document ${new Date().toISOString().split('T')[0]}`,
+                comment: comment === null || comment === void 0 ? void 0 : comment.trim() // ADDED: pass the comment to the service
             });
             res.status(201).json(newSignedLetter);
         }
@@ -378,6 +384,59 @@ class LetterController {
             }
             const letters = await letter_service_1.LetterService.getMyRejectedLetters(userId);
             res.status(200).json(letters);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async getDeletedLetters(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            const letters = await letter_service_1.LetterService.getDeletedLetters(userId);
+            res.status(200).json(letters);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async restoreLetter(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            const letterId = req.params.id;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            if (!letterId) {
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            }
+            const restoredLetter = await letter_service_1.LetterService.restoreLetter(letterId, userId);
+            res.status(200).json(restoredLetter);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async permanentlyDeleteLetter(req, res, next) {
+        var _a;
+        try {
+            const authenticatedReq = req;
+            const userId = (_a = authenticatedReq.user) === null || _a === void 0 ? void 0 : _a.id;
+            const letterId = req.params.id;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(401, 'Authentication required.'));
+            }
+            if (!letterId) {
+                return next(new errorHandler_1.AppError(400, 'Letter ID parameter is required.'));
+            }
+            await letter_service_1.LetterService.permanentlyDeleteLetter(letterId, userId);
+            res.status(204).send();
         }
         catch (error) {
             next(error);

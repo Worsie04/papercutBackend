@@ -130,6 +130,10 @@ export class LetterController {
                  return next(new AppError(400, 'Invalid placement object structure.'));
             }
         }
+        // Reject payloads containing QR code placements
+        if (placements.some(p => (p as any).type === 'qrcode')) {
+            return next(new AppError(400, 'QR code placements are not allowed in interactive PDF creation.'));
+        }
         if (!reviewers.every(id => typeof id === 'string')) {
              return next(new AppError(400, 'Invalid reviewers format. Expecting an array of strings (User IDs).'));
         }
@@ -357,5 +361,38 @@ static async finalApproveLetterSingle(req: Request, res: Response, next: NextFun
     } catch (error) { next(error); }
  }
 
+  static async getDeletedLetters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+        const authenticatedReq = req as AuthenticatedRequest;
+        const userId = authenticatedReq.user?.id;
+        if (!userId) { return next(new AppError(401, 'Authentication required.')); }
+        const letters = await LetterService.getDeletedLetters(userId);
+        res.status(200).json(letters);
+    } catch (error) { next(error); }
+  }
+
+  static async restoreLetter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+        const authenticatedReq = req as AuthenticatedRequest;
+        const userId = authenticatedReq.user?.id;
+        const letterId = req.params.id;
+        if (!userId) { return next(new AppError(401, 'Authentication required.')); }
+        if (!letterId) { return next(new AppError(400, 'Letter ID parameter is required.')); }
+        const restoredLetter = await LetterService.restoreLetter(letterId, userId);
+        res.status(200).json(restoredLetter);
+    } catch (error) { next(error); }
+  }
+
+  static async permanentlyDeleteLetter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+        const authenticatedReq = req as AuthenticatedRequest;
+        const userId = authenticatedReq.user?.id;
+        const letterId = req.params.id;
+        if (!userId) { return next(new AppError(401, 'Authentication required.')); }
+        if (!letterId) { return next(new AppError(400, 'Letter ID parameter is required.')); }
+        await LetterService.permanentlyDeleteLetter(letterId, userId);
+        res.status(204).send();
+    } catch (error) { next(error); }
+  }
 
 }

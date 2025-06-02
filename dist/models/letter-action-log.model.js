@@ -14,6 +14,9 @@ var LetterActionType;
     LetterActionType["RESUBMIT"] = "resubmit";
     LetterActionType["COMMENT"] = "comment";
     LetterActionType["UPLOAD_REVISION"] = "upload_revision";
+    LetterActionType["DELETE"] = "delete";
+    LetterActionType["RESTORE"] = "restore";
+    LetterActionType["PERMANENT_DELETE"] = "permanent_delete";
 })(LetterActionType || (exports.LetterActionType = LetterActionType = {}));
 class LetterActionLog extends sequelize_1.Model {
     static associate(models) {

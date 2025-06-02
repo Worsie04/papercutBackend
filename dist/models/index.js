@@ -17,7 +17,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Activity = exports.RecordFile = exports.File = exports.SpaceReassignment = exports.SpaceCommentReject = exports.SpaceMember = exports.UserRole = exports.Config = exports.Setting = exports.Record = exports.CabinetMemberPermission = exports.CabinetMember = exports.Cabinet = exports.Space = exports.Role = exports.OrganizationMember = exports.Organization = exports.Admin = exports.User = exports.initializeModels = void 0;
+exports.TemplateFavorite = exports.Template = exports.Stamp = exports.Signature = exports.Activity = exports.RecordFile = exports.File = exports.SpaceReassignment = exports.SpaceCommentReject = exports.SpaceMember = exports.UserRole = exports.Config = exports.Setting = exports.Record = exports.CabinetMemberPermission = exports.CabinetMember = exports.Cabinet = exports.Space = exports.Role = exports.OrganizationMember = exports.Organization = exports.Admin = exports.User = exports.initializeModels = void 0;
 const user_model_1 = require("./user.model");
 Object.defineProperty(exports, "User", { enumerable: true, get: function () { return user_model_1.User; } });
 const admin_model_1 = require("./admin.model");
@@ -56,6 +56,14 @@ const record_file_model_1 = __importDefault(require("./record-file.model"));
 exports.RecordFile = record_file_model_1.default;
 const activity_model_1 = require("./activity.model");
 Object.defineProperty(exports, "Activity", { enumerable: true, get: function () { return activity_model_1.Activity; } });
+const signature_model_1 = require("./signature.model");
+Object.defineProperty(exports, "Signature", { enumerable: true, get: function () { return signature_model_1.Signature; } });
+const stamp_model_1 = require("./stamp.model");
+Object.defineProperty(exports, "Stamp", { enumerable: true, get: function () { return stamp_model_1.Stamp; } });
+const template_model_1 = __importDefault(require("./template.model"));
+exports.Template = template_model_1.default;
+const template_favorite_model_1 = __importDefault(require("./template-favorite.model"));
+exports.TemplateFavorite = template_favorite_model_1.default;
 const initializeModels = (sequelize) => {
     // Initialize all models first
     const models = {
@@ -77,7 +85,11 @@ const initializeModels = (sequelize) => {
         SpaceReassignment: space_reassignment_model_1.SpaceReassignment,
         File: file_model_1.default,
         RecordFile: record_file_model_1.default,
-        Activity: activity_model_1.Activity
+        Activity: activity_model_1.Activity,
+        Signature: signature_model_1.Signature,
+        Stamp: stamp_model_1.Stamp,
+        Template: template_model_1.default,
+        TemplateFavorite: template_favorite_model_1.default
     };
     return models;
 };
@@ -85,3 +97,7 @@ exports.initializeModels = initializeModels;
 __exportStar(require("./cabinet.model"), exports);
 __exportStar(require("./cabinet-member.model"), exports);
 __exportStar(require("./cabinet-member-permission.model"), exports);
+__exportStar(require("./signature.model"), exports);
+__exportStar(require("./stamp.model"), exports);
+__exportStar(require("./template.model"), exports);
+__exportStar(require("./template-favorite.model"), exports);

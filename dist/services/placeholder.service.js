@@ -12,10 +12,10 @@ class PlaceholderService {
                 where: { userId },
                 order: [['name', 'ASC']],
             });
-            // Map to include placeholder field
             return placeholders.map((ph) => ({
                 id: ph.id,
                 name: ph.name,
+                orgName: ph.orgName,
                 type: ph.type,
                 initialValue: ph.initialValue,
                 placeholder: ph.placeholder, // Computed dynamically
@@ -26,7 +26,7 @@ class PlaceholderService {
         }
     }
     async create(userId, data) {
-        const { name, type, initialValue } = data;
+        const { name, orgName, type, initialValue } = data;
         if (!name || !type) {
             throw new errorHandler_1.AppError(http_status_codes_1.StatusCodes.BAD_REQUEST, 'Name and type are required.');
         }
@@ -34,12 +34,14 @@ class PlaceholderService {
             const newPlaceholder = await user_placeholder_model_1.UserPlaceholder.create({
                 userId,
                 name,
+                orgName,
                 type,
                 initialValue,
             });
             return {
                 id: newPlaceholder.id,
                 name: newPlaceholder.name,
+                orgName: newPlaceholder.orgName,
                 type: newPlaceholder.type,
                 initialValue: newPlaceholder.initialValue,
                 placeholder: newPlaceholder.placeholder,
@@ -71,7 +73,6 @@ class PlaceholderService {
             throw new errorHandler_1.AppError(http_status_codes_1.StatusCodes.INTERNAL_SERVER_ERROR, 'Placeholder could not be deleted.');
         }
     }
-    // Update method remains optional but included for completeness
     async updateById(userId, placeholderId, data) {
         const { name, type, initialValue } = data;
         if (!placeholderId) {
@@ -107,6 +108,29 @@ class PlaceholderService {
                 throw new errorHandler_1.AppError(http_status_codes_1.StatusCodes.CONFLICT, `Placeholder "${name}" already exists.`);
             }
             throw new errorHandler_1.AppError(http_status_codes_1.StatusCodes.INTERNAL_SERVER_ERROR, 'Placeholder could not be updated.');
+        }
+    }
+    async checkAndFindPlaceholder(placeholderName) {
+        try {
+            const placeholder = await user_placeholder_model_1.UserPlaceholder.findOne({
+                where: {
+                    name: placeholderName
+                },
+            });
+            if (!placeholder) {
+                return null;
+            }
+            return {
+                id: placeholder.id,
+                name: placeholder.name,
+                orgName: placeholder.orgName,
+                type: placeholder.type,
+                initialValue: placeholder.initialValue,
+                placeholder: placeholder.placeholder, // Computed dynamically
+            };
+        }
+        catch (error) {
+            throw new errorHandler_1.AppError(http_status_codes_1.StatusCodes.INTERNAL_SERVER_ERROR, 'Placeholder could not be retrieved.');
         }
     }
 }

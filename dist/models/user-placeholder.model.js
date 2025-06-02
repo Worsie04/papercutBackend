@@ -33,6 +33,10 @@ UserPlaceholder.init({
         type: sequelize_1.DataTypes.STRING,
         allowNull: false,
     },
+    orgName: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: false,
+    },
     type: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: false,

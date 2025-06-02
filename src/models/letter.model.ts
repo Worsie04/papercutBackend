@@ -14,7 +14,8 @@ export enum LetterWorkflowStatus {
   PENDING_REVIEW = 'pending_review',
   PENDING_APPROVAL = 'pending_approval',
   APPROVED = 'approved',
-  REJECTED = 'rejected'
+  REJECTED = 'rejected',
+  DELETED = 'deleted'
 }
 
 export interface PlacementInfo {
@@ -25,6 +26,10 @@ export interface PlacementInfo {
   y: number;
   width: number;
   height: number;
+  xPct?: number;
+  yPct?: number;
+  widthPct?: number;
+  heightPct?: number;
 }
 
 export interface LetterAttributes {
@@ -47,6 +52,7 @@ export interface LetterAttributes {
   placements?: PlacementInfo[] | null;
   createdAt?: Date;
   updatedAt?: Date;
+  deletedAt?: Date | null;
   status?: string;
 }
 
@@ -54,7 +60,7 @@ export interface LetterCreationAttributes extends Optional<LetterAttributes,
   'id' | 'createdAt' | 'updatedAt' | 'templateId' | 'originalPdfFileId' | 'name' |
   'formData' | 'logoUrl' | 'signatureUrl' | 'stampUrl' | 'signedPdfUrl' |
   'workflowStatus' | 'currentStepIndex' | 'nextActionById' | 'qrCodeUrl' |
-  'publicLink' | 'finalSignedPdfUrl' | 'placements' | 'status'> {}
+  'publicLink' | 'finalSignedPdfUrl' | 'placements' | 'deletedAt' | 'status'> {}
 
 export class Letter extends Model<LetterAttributes, LetterCreationAttributes> implements LetterAttributes {
   public id!: string;
@@ -78,6 +84,7 @@ export class Letter extends Model<LetterAttributes, LetterCreationAttributes> im
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
+  public readonly deletedAt!: Date | null;
 
   public getUser!: BelongsToGetAssociationMixin<User>;
   public getTemplate!: BelongsToGetAssociationMixin<Template>;
@@ -230,6 +237,11 @@ Letter.init({
     defaultValue: DataTypes.NOW,
     field: 'updated_at'
   },
+  deletedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'deleted_at'
+  },
   status: {
       type: DataTypes.STRING,
       allowNull: true
@@ -239,5 +251,6 @@ Letter.init({
   tableName: 'letters',
   timestamps: true,
   underscored: true,
-  paranoid: false
+  paranoid: true,
+  deletedAt: 'deletedAt'
 });

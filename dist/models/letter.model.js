@@ -10,6 +10,7 @@ var LetterWorkflowStatus;
     LetterWorkflowStatus["PENDING_APPROVAL"] = "pending_approval";
     LetterWorkflowStatus["APPROVED"] = "approved";
     LetterWorkflowStatus["REJECTED"] = "rejected";
+    LetterWorkflowStatus["DELETED"] = "deleted";
 })(LetterWorkflowStatus || (exports.LetterWorkflowStatus = LetterWorkflowStatus = {}));
 class Letter extends sequelize_1.Model {
     static associate(models) {
@@ -151,6 +152,11 @@ Letter.init({
         defaultValue: sequelize_1.DataTypes.NOW,
         field: 'updated_at'
     },
+    deletedAt: {
+        type: sequelize_1.DataTypes.DATE,
+        allowNull: true,
+        field: 'deleted_at'
+    },
     status: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: true
@@ -160,5 +166,6 @@ Letter.init({
     tableName: 'letters',
     timestamps: true,
     underscored: true,
-    paranoid: false
+    paranoid: true,
+    deletedAt: 'deletedAt'
 });

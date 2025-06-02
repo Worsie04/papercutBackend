@@ -18,6 +18,10 @@ import { CabinetMemberPermission } from './cabinet-member-permission.model';
 import File from './file.model';
 import RecordFile from './record-file.model';
 import { Activity } from './activity.model';
+import { Signature } from './signature.model';
+import { Stamp } from './stamp.model';
+import Template from './template.model';
+import TemplateFavorite from './template-favorite.model';
 
 export const initializeModels = (sequelize: Sequelize) => {
   // Initialize all models first
@@ -40,7 +44,11 @@ export const initializeModels = (sequelize: Sequelize) => {
     SpaceReassignment,
     File,
     RecordFile,
-    Activity
+    Activity,
+    Signature,
+    Stamp,
+    Template,
+    TemplateFavorite
   };
 
   return models;
@@ -66,9 +74,17 @@ export {
   SpaceReassignment,
   File,
   RecordFile,
-  Activity
+  Activity,
+  Signature,
+  Stamp,
+  Template,
+  TemplateFavorite
 };
 
 export * from './cabinet.model';
 export * from './cabinet-member.model';
 export * from './cabinet-member-permission.model';
+export * from './signature.model';
+export * from './stamp.model';
+export * from './template.model';
+export * from './template-favorite.model';

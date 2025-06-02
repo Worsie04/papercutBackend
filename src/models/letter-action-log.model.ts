@@ -12,7 +12,10 @@ export enum LetterActionType {
   FINAL_REJECT = 'final_reject',
   RESUBMIT = 'resubmit',
   COMMENT = 'comment',
-  UPLOAD_REVISION = 'upload_revision'
+  UPLOAD_REVISION = 'upload_revision',
+  DELETE = 'delete',
+  RESTORE = 'restore',
+  PERMANENT_DELETE = 'permanent_delete'
 }
 
 export interface LetterActionLogAttributes {

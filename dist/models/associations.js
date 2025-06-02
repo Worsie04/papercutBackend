@@ -24,9 +24,11 @@ const group_model_1 = require("./group.model");
 const cabinet_reassignment_model_1 = require("./cabinet-reassignment.model");
 const template_share_model_1 = __importDefault(require("./template-share.model"));
 const template_model_1 = __importDefault(require("./template.model"));
+const template_favorite_model_1 = __importDefault(require("./template-favorite.model"));
 const letter_model_1 = require("./letter.model");
 const letter_reviewer_model_1 = require("./letter-reviewer.model");
 const letter_action_log_model_1 = require("./letter-action-log.model");
+const signature_model_1 = require("./signature.model");
 function setupAssociations() {
     // --- Existing associations ---
     notification_model_1.Notification.belongsTo(user_model_1.User, { foreignKey: 'userId', as: 'user' });
@@ -96,6 +98,11 @@ function setupAssociations() {
     template_model_1.default.hasMany(template_share_model_1.default, { sourceKey: 'id', foreignKey: 'templateId', as: 'shares' });
     template_model_1.default.belongsTo(user_model_1.User, { foreignKey: 'userId', targetKey: 'id', as: 'user' });
     user_model_1.User.hasMany(template_model_1.default, { sourceKey: 'id', foreignKey: 'userId', as: 'createdTemplates' });
+    // --- TEMPLATE FAVORITE ASSOCIATIONS ---
+    template_favorite_model_1.default.belongsTo(user_model_1.User, { foreignKey: 'userId', targetKey: 'id', as: 'user' });
+    template_favorite_model_1.default.belongsTo(template_model_1.default, { foreignKey: 'templateId', targetKey: 'id', as: 'template' });
+    user_model_1.User.hasMany(template_favorite_model_1.default, { sourceKey: 'id', foreignKey: 'userId', as: 'favoriteTemplates' });
+    template_model_1.default.hasMany(template_favorite_model_1.default, { sourceKey: 'id', foreignKey: 'templateId', as: 'favoritedBy' });
     // --- LETTER ASSOCIATIONS (with fix) ---
     letter_model_1.Letter.belongsTo(user_model_1.User, { foreignKey: 'userId', as: 'user' });
     user_model_1.User.hasMany(letter_model_1.Letter, { foreignKey: 'userId', as: 'createdLetters' });
@@ -113,5 +120,8 @@ function setupAssociations() {
     letter_action_log_model_1.LetterActionLog.belongsTo(user_model_1.User, { foreignKey: 'userId', as: 'user' });
     user_model_1.User.hasMany(letter_action_log_model_1.LetterActionLog, { foreignKey: 'userId', as: 'letterActions' });
     // --- END LETTER ASSOCIATIONS ---
+    // --- SIGNATURE ASSOCIATIONS ---
+    signature_model_1.Signature.belongsTo(user_model_1.User, { foreignKey: 'userId', as: 'user' });
+    user_model_1.User.hasMany(signature_model_1.Signature, { foreignKey: 'userId', as: 'signatures' });
 }
 exports.initializeAssociations = setupAssociations;

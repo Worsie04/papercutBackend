@@ -5,6 +5,7 @@ import { StatusCodes } from 'http-status-codes';
 
 interface CreatePlaceholderDto {
   name: string;
+  orgName: string;
   type: string;
   initialValue?: string | null;
 }
@@ -18,10 +19,11 @@ export class PlaceholderService {
         where: { userId },
         order: [['name', 'ASC']],
       });
-      // Map to include placeholder field
+      
       return placeholders.map((ph) => ({
         id: ph.id,
         name: ph.name,
+        orgName: ph.orgName,
         type: ph.type,
         initialValue: ph.initialValue,
         placeholder: ph.placeholder, // Computed dynamically
@@ -32,7 +34,7 @@ export class PlaceholderService {
   }
 
   async create(userId: string, data: CreatePlaceholderDto): Promise<any> {
-    const { name, type, initialValue } = data;
+    const { name,orgName, type, initialValue } = data;
     if (!name || !type) {
       throw new AppError(StatusCodes.BAD_REQUEST, 'Name and type are required.');
     }
@@ -40,12 +42,14 @@ export class PlaceholderService {
       const newPlaceholder = await UserPlaceholder.create({
         userId,
         name,
+        orgName,
         type,
         initialValue,
       });
       return {
         id: newPlaceholder.id,
         name: newPlaceholder.name,
+        orgName: newPlaceholder.orgName,
         type: newPlaceholder.type,
         initialValue: newPlaceholder.initialValue,
         placeholder: newPlaceholder.placeholder,
@@ -76,7 +80,6 @@ export class PlaceholderService {
     }
   }
 
-  // Update method remains optional but included for completeness
   async updateById(userId: string, placeholderId: string, data: UpdatePlaceholderDto): Promise<any> {
     const { name, type, initialValue } = data;
     if (!placeholderId) {
@@ -108,6 +111,31 @@ export class PlaceholderService {
         throw new AppError(StatusCodes.CONFLICT, `Placeholder "${name}" already exists.`);
       }
       throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, 'Placeholder could not be updated.');
+    }
+  }
+
+  async checkAndFindPlaceholder(placeholderName: string): Promise<any | null> {
+    try {
+      const placeholder = await UserPlaceholder.findOne({
+        where: {
+          name: placeholderName 
+        },
+      });
+      
+      if (!placeholder) {
+        return null;
+      }
+      
+      return {
+        id: placeholder.id,
+        name: placeholder.name,
+        orgName: placeholder.orgName,
+        type: placeholder.type,
+        initialValue: placeholder.initialValue,
+        placeholder: placeholder.placeholder, // Computed dynamically
+      };
+    } catch (error) {
+      throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, 'Placeholder could not be retrieved.');
     }
   }
 }

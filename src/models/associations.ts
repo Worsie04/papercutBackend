@@ -17,9 +17,11 @@ import { Group } from './group.model';
 import { CabinetReassignment } from './cabinet-reassignment.model';
 import TemplateShare from './template-share.model';
 import Template from './template.model';
+import TemplateFavorite from './template-favorite.model';
 import { Letter } from './letter.model';
 import { LetterReviewer } from './letter-reviewer.model';
 import { LetterActionLog } from './letter-action-log.model';
+import { Signature } from './signature.model';
 
 
 export function setupAssociations() {
@@ -112,6 +114,11 @@ export function setupAssociations() {
   Template.belongsTo(User, { foreignKey: 'userId', targetKey: 'id', as: 'user' });
   User.hasMany(Template, { sourceKey: 'id', foreignKey: 'userId', as: 'createdTemplates' });
 
+  // --- TEMPLATE FAVORITE ASSOCIATIONS ---
+  TemplateFavorite.belongsTo(User, { foreignKey: 'userId', targetKey: 'id', as: 'user' });
+  TemplateFavorite.belongsTo(Template, { foreignKey: 'templateId', targetKey: 'id', as: 'template' });
+  User.hasMany(TemplateFavorite, { sourceKey: 'id', foreignKey: 'userId', as: 'favoriteTemplates' });
+  Template.hasMany(TemplateFavorite, { sourceKey: 'id', foreignKey: 'templateId', as: 'favoritedBy' });
 
   // --- LETTER ASSOCIATIONS (with fix) ---
 
@@ -139,6 +146,10 @@ export function setupAssociations() {
   User.hasMany(LetterActionLog, { foreignKey: 'userId', as: 'letterActions' });
 
   // --- END LETTER ASSOCIATIONS ---
+
+  // --- SIGNATURE ASSOCIATIONS ---
+  Signature.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  User.hasMany(Signature, { foreignKey: 'userId', as: 'signatures' });
 
 }
 

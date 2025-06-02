@@ -26,11 +26,11 @@ class PlaceholderController {
             if (!userId) {
                 return next(new errorHandler_1.AppError(http_status_codes_1.StatusCodes.UNAUTHORIZED, 'Authentication required.'));
             }
-            const { name, type, initialValue } = req.body;
+            const { name, orgName, type, initialValue } = req.body;
             if (!name || !type) {
                 return next(new errorHandler_1.AppError(http_status_codes_1.StatusCodes.BAD_REQUEST, 'Name and type are required.'));
             }
-            const newPlaceholder = await placeholder_service_1.placeholderService.create(userId, { name, type, initialValue });
+            const newPlaceholder = await placeholder_service_1.placeholderService.create(userId, { name, orgName, type, initialValue });
             res.status(http_status_codes_1.StatusCodes.CREATED).json(newPlaceholder);
         }
         catch (error) {
@@ -70,6 +70,27 @@ class PlaceholderController {
             }
             const updatedPlaceholder = await placeholder_service_1.placeholderService.updateById(userId, placeholderId, { name, type, initialValue });
             res.status(http_status_codes_1.StatusCodes.OK).json(updatedPlaceholder);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    static async checkAndFindPlaceholder(req, res, next) {
+        var _a;
+        try {
+            const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+            const placeholderName = req.params.placeholderName;
+            if (!userId) {
+                return next(new errorHandler_1.AppError(http_status_codes_1.StatusCodes.UNAUTHORIZED, 'Authentication required.'));
+            }
+            const placeholder = await placeholder_service_1.placeholderService.checkAndFindPlaceholder(placeholderName);
+            if (!placeholder) {
+                return res.status(http_status_codes_1.StatusCodes.NOT_FOUND).json({
+                    error: `Placeholder "${placeholderName}" not found.`,
+                    found: false
+                });
+            }
+            res.status(http_status_codes_1.StatusCodes.OK).json(Object.assign(Object.assign({}, placeholder), { found: true }));
         }
         catch (error) {
             next(error);

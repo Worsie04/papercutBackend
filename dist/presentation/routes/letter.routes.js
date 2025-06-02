@@ -8,11 +8,14 @@ router.use((0, auth_middleware_1.authenticate)(['user', 'admin', 'super_admin', 
 router.get('/pending-review', letter_controller_1.LetterController.getPendingReviewLetters);
 router.get('/pending-my-action', letter_controller_1.LetterController.getLettersPendingMyAction);
 router.get('/my-rejected', letter_controller_1.LetterController.getMyRejectedLetters);
+router.get('/deleted', letter_controller_1.LetterController.getDeletedLetters);
 router.post('/', letter_controller_1.LetterController.create);
 router.get('/', letter_controller_1.LetterController.getAllByUserId);
 router.get('/:id/view-url', letter_controller_1.LetterController.getSignedPdfViewUrl);
 router.get('/:id', letter_controller_1.LetterController.getById);
 router.delete('/:id', letter_controller_1.LetterController.delete);
+router.patch('/:id/restore', letter_controller_1.LetterController.restoreLetter);
+router.delete('/:id/permanent', letter_controller_1.LetterController.permanentlyDeleteLetter);
 //router.put('/:id', LetterController.update);
 router.post('/from-pdf-interactive', letter_controller_1.LetterController.createFromPdfInteractive);
 router.post('/:id/approve-review', letter_controller_1.LetterController.approveLetterReview);

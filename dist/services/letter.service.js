@@ -43,7 +43,7 @@ const QR_PLACEHOLDER_IDENTIFIER_BACKEND = 'QR_PLACEHOLDER_INTERNAL_ID';
 class LetterService {
     static async create(data) {
         var _a;
-        const { templateId, userId: submitterId, formData, name, logoUrl, signatureUrl, stampUrl } = data;
+        const { templateId, userId: submitterId, formData, name, logoUrl, signatureUrl, stampUrl, comment } = data;
         if (!templateId) {
             throw new errorHandler_1.AppError(400, 'Template ID is required when creating a letter from a template.');
         }
@@ -140,7 +140,7 @@ class LetterService {
                 letterId: newLetter.id,
                 userId: submitterId,
                 actionType: letter_action_log_model_1.LetterActionType.SUBMIT,
-                comment: 'Letter submitted from template.',
+                comment: comment || 'Letter submitted from template.',
                 details: {
                     templateId: templateId,
                     initialStatus: initialStatus,
@@ -249,9 +249,6 @@ class LetterService {
                         as: 'user', // Include the original submitter info
                         attributes: ['id', 'firstName', 'lastName', 'email', 'avatar'] // Specify needed fields
                     },
-                    // Optionally include last action log or template info if needed for display
-                    // { model: Template, as: 'template', attributes: ['id', 'name'] },
-                    // { model: LetterActionLog, as: 'letterActionLogs', limit: 1, order: [['createdAt', 'DESC']] }
                 ],
                 order: [['createdAt', 'DESC']] // Order by creation date, newest first
             });
@@ -266,7 +263,6 @@ class LetterService {
         }
     }
     static async finalApproveLetter(letterId, userId, placements, comment, name) {
-        var _a;
         if (!R2_PUB_URL) {
             throw new errorHandler_1.AppError(500, 'Server configuration error: R2 public URL is missing.');
         }
@@ -371,23 +367,41 @@ class LetterService {
                 errorCorrectionLevel: 'H', type: 'png', margin: 1, color: { dark: '#000000', light: '#FFFFFF' },
             });
             const qrImageEmbed = await pdfDoc.embedPng(qrCodeBuffer);
-            const qrPlacements = (_a = letter.placements) === null || _a === void 0 ? void 0 : _a.filter(p => p.type === 'qrcode');
-            console.log(`Found ${(qrPlacements === null || qrPlacements === void 0 ? void 0 : qrPlacements.length) || 0} QR code placements for letter ${letterId}`);
-            if (qrPlacements && qrPlacements.length > 0) {
+            // Get QR placements from the new placements parameter instead of letter.placements
+            const qrPlacements = (placements === null || placements === void 0 ? void 0 : placements.filter(p => p.type === 'qrcode')) || [];
+            console.log(`Found ${qrPlacements.length} QR code placements for letter ${letterId}`);
+            if (qrPlacements.length > 0) {
                 for (const qrPlace of qrPlacements) {
                     if (qrPlace.pageNumber < 1 || qrPlace.pageNumber > pages.length) {
                         console.warn(`QR placeholder on invalid page ${qrPlace.pageNumber} for letter ${letter.id}, skipping.`);
                         continue;
                     }
                     const page = pages[qrPlace.pageNumber - 1];
-                    const { height: pageHeight } = page.getSize();
-                    const qrY = pageHeight - qrPlace.y - qrPlace.height;
-                    console.log(`Embedding QR code on page ${qrPlace.pageNumber} at coordinates: (${qrPlace.x}, ${qrY}), size: ${qrPlace.width}x${qrPlace.height}`);
+                    const { width: pageWidth, height: pageHeight } = page.getSize();
+                    // Use the coordinates directly from the frontend (already converted to absolute values)
+                    let x, y, width, height;
+                    if (qrPlace.xPct !== undefined && qrPlace.yPct !== undefined) {
+                        // If percentage values are provided, convert them
+                        x = qrPlace.xPct * pageWidth;
+                        y = qrPlace.yPct * pageHeight;
+                        width = qrPlace.widthPct !== undefined ? qrPlace.widthPct * pageWidth : qrPlace.width;
+                        height = qrPlace.heightPct !== undefined ? qrPlace.heightPct * pageHeight : qrPlace.height;
+                    }
+                    else {
+                        // Use absolute values directly (this is what the frontend is sending)
+                        x = qrPlace.x;
+                        y = qrPlace.y;
+                        width = qrPlace.width;
+                        height = qrPlace.height;
+                    }
+                    // Convert y-coordinate from top-left (HTML) to bottom-left (PDF)
+                    const pdfY = pageHeight - y - height;
+                    console.log(`Placing QR code at (${x}, ${pdfY}) with size ${width}x${height} on page ${qrPlace.pageNumber}`);
                     page.drawImage(qrImageEmbed, {
-                        x: qrPlace.x,
-                        y: qrY,
-                        width: qrPlace.width,
-                        height: qrPlace.height,
+                        x,
+                        y: pdfY,
+                        width,
+                        height,
                     });
                 }
             }
@@ -1190,11 +1204,19 @@ class LetterService {
             // Combine all letter IDs from different sources
             const allLetterIds = [...new Set([...letterIdsFromActionLogs])];
             // Find letters where user is creator OR user participated in workflow OR user was a reviewer/approver
+            // Exclude soft deleted letters
             const letters = await letter_model_1.Letter.findAll({
                 where: {
-                    [sequelize_1.Op.or]: [
-                        { userId }, // User is creator
-                        { id: { [sequelize_1.Op.in]: allLetterIds } } // User participated in workflow or was assigned as reviewer/approver
+                    [sequelize_1.Op.and]: [
+                        {
+                            [sequelize_1.Op.or]: [
+                                { userId }, // User is creator
+                                { id: { [sequelize_1.Op.in]: allLetterIds } } // User participated in workflow or was assigned as reviewer/approver
+                            ]
+                        },
+                        {
+                            workflowStatus: { [sequelize_1.Op.ne]: letter_model_1.LetterWorkflowStatus.DELETED } // Exclude deleted letters
+                        }
                     ]
                 },
                 include: [
@@ -1254,10 +1276,19 @@ class LetterService {
             if (!letterToDelete) {
                 throw new errorHandler_1.AppError(404, `Letter with ID ${id} not found or access denied.`);
             }
-            // Add cascading delete logic or handle related records (reviewers, logs) if needed
-            await letter_action_log_model_1.LetterActionLog.destroy({ where: { letterId: id } });
-            await letter_reviewer_model_1.LetterReviewer.destroy({ where: { letterId: id } });
-            const affectedRows = await letter_model_1.Letter.destroy({ where: { id, userId } });
+            // Soft delete: Update workflowStatus to DELETED and set deletedAt
+            await letterToDelete.update({
+                workflowStatus: letter_model_1.LetterWorkflowStatus.DELETED,
+                deletedAt: new Date()
+            });
+            // Log the deletion action
+            await letter_action_log_model_1.LetterActionLog.create({
+                letterId: id,
+                userId: userId,
+                actionType: letter_action_log_model_1.LetterActionType.DELETE,
+                comment: 'Letter moved to trash.',
+                details: { originalStatus: letterToDelete.workflowStatus }
+            });
             return true;
         }
         catch (error) {
@@ -1268,11 +1299,14 @@ class LetterService {
         }
     }
     static async createFromPdfInteractive(data) {
-        const { originalFileId, placements, userId, reviewers, approver, name } = data;
+        var _a;
+        const { originalFileId, placements, userId, reviewers, approver, name, comment } = data;
         let transaction = null;
         if (!reviewers || reviewers.length === 0) {
             throw new errorHandler_1.AppError(400, 'At least one reviewer must be specified.');
         }
+        // Filter out QR code placements - only allowed in final approval
+        const safePlacements = (_a = placements === null || placements === void 0 ? void 0 : placements.filter(p => p.type !== 'qrcode')) !== null && _a !== void 0 ? _a : [];
         try {
             transaction = await sequelize_2.sequelize.transaction();
             const originalFileRecord = await file_model_1.default.findByPk(originalFileId, { transaction });
@@ -1283,7 +1317,7 @@ class LetterService {
             const originalPdfBytes = await file_service_1.FileService.getFileBuffer(originalPdfKey);
             const pdfDoc = await pdf_lib_1.PDFDocument.load(originalPdfBytes);
             const pages = pdfDoc.getPages();
-            for (const item of placements) {
+            for (const item of safePlacements) {
                 if (item.type === 'signature' || item.type === 'stamp') {
                     if (item.pageNumber < 1 || item.pageNumber > pages.length) {
                         console.warn(`Skipping placement: Invalid page ${item.pageNumber} for item ${item.type} in letter.`);
@@ -1365,7 +1399,7 @@ class LetterService {
                 originalPdfFileId: originalFileId,
                 signedPdfUrl: intermediateSignedPdfIdentifier,
                 finalSignedPdfUrl: null,
-                placements: placements,
+                placements: safePlacements,
                 workflowStatus: letter_model_1.LetterWorkflowStatus.PENDING_REVIEW,
                 currentStepIndex: 1,
                 nextActionById: reviewers[0],
@@ -1389,8 +1423,8 @@ class LetterService {
                 letterId: newLetter.id,
                 userId: userId,
                 actionType: letter_action_log_model_1.LetterActionType.SUBMIT,
-                comment: 'Letter submitted for review (interactive PDF).',
-                details: { initialReviewerId: reviewers[0], placementsCount: placements.length }
+                comment: comment || 'Letter submitted for review (interactive PDF).', // Use provided comment or default
+                details: { initialReviewerId: reviewers[0], placementsCount: safePlacements.length }
             }, { transaction });
             await activity_service_1.ActivityService.logActivity({
                 userId: userId,
@@ -2052,6 +2086,119 @@ class LetterService {
         catch (error) {
             console.error(`Error getting rejected letters for user ${userId}:`, error);
             throw new errorHandler_1.AppError(500, 'Could not retrieve rejected letters.');
+        }
+    }
+    static async getDeletedLetters(userId) {
+        if (!userId) {
+            throw new errorHandler_1.AppError(401, 'User ID is required.');
+        }
+        try {
+            const letters = await letter_model_1.Letter.findAll({
+                where: {
+                    userId: userId,
+                    workflowStatus: letter_model_1.LetterWorkflowStatus.DELETED
+                },
+                include: [
+                    {
+                        model: user_model_1.User,
+                        as: 'user',
+                        attributes: ['id', 'firstName', 'lastName', 'email'],
+                    },
+                    { model: template_model_1.default, as: 'template', attributes: ['id', 'name'], required: false },
+                ],
+                order: [['deletedAt', 'DESC']],
+                paranoid: false // Include soft deleted records
+            });
+            return letters;
+        }
+        catch (error) {
+            console.error(`Error getting deleted letters for user ${userId}:`, error);
+            throw new errorHandler_1.AppError(500, 'Could not retrieve deleted letters.');
+        }
+    }
+    static async restoreLetter(id, userId) {
+        var _a;
+        if (!id || !userId) {
+            throw new errorHandler_1.AppError(401, 'Letter ID and User ID are required.');
+        }
+        const transaction = await sequelize_2.sequelize.transaction();
+        try {
+            const letterToRestore = await letter_model_1.Letter.findOne({
+                where: { id, userId, workflowStatus: letter_model_1.LetterWorkflowStatus.DELETED },
+                paranoid: false, // Include soft deleted records
+                transaction
+            });
+            if (!letterToRestore) {
+                throw new errorHandler_1.AppError(404, `Deleted letter with ID ${id} not found or access denied.`);
+            }
+            // Get the original status from the delete action log
+            const deleteLog = await letter_action_log_model_1.LetterActionLog.findOne({
+                where: { letterId: id, actionType: letter_action_log_model_1.LetterActionType.DELETE },
+                order: [['createdAt', 'DESC']],
+                transaction
+            });
+            const originalStatus = ((_a = deleteLog === null || deleteLog === void 0 ? void 0 : deleteLog.details) === null || _a === void 0 ? void 0 : _a.originalStatus) || letter_model_1.LetterWorkflowStatus.DRAFT;
+            // Restore the letter by setting deletedAt to null and restoring original status
+            await letterToRestore.update({
+                workflowStatus: originalStatus,
+                deletedAt: null
+            }, { transaction });
+            // Log the restoration action
+            await letter_action_log_model_1.LetterActionLog.create({
+                letterId: id,
+                userId: userId,
+                actionType: letter_action_log_model_1.LetterActionType.RESTORE,
+                comment: 'Letter restored from trash.',
+                details: { restoredToStatus: originalStatus }
+            }, { transaction });
+            await transaction.commit();
+            return letterToRestore;
+        }
+        catch (error) {
+            if (transaction)
+                await transaction.rollback();
+            console.error(`Error restoring letter with ID ${id} for user ${userId}:`, error);
+            if (error instanceof errorHandler_1.AppError)
+                throw error;
+            throw new errorHandler_1.AppError(500, 'Could not restore letter.');
+        }
+    }
+    static async permanentlyDeleteLetter(id, userId) {
+        if (!id || !userId) {
+            throw new errorHandler_1.AppError(401, 'Letter ID and User ID are required.');
+        }
+        const transaction = await sequelize_2.sequelize.transaction();
+        try {
+            const letterToDelete = await letter_model_1.Letter.findOne({
+                where: { id, userId, workflowStatus: letter_model_1.LetterWorkflowStatus.DELETED },
+                paranoid: false, // Include soft deleted records
+                transaction
+            });
+            if (!letterToDelete) {
+                throw new errorHandler_1.AppError(404, `Deleted letter with ID ${id} not found or access denied.`);
+            }
+            // Log the permanent deletion action before deleting
+            await letter_action_log_model_1.LetterActionLog.create({
+                letterId: id,
+                userId: userId,
+                actionType: letter_action_log_model_1.LetterActionType.PERMANENT_DELETE,
+                comment: 'Letter permanently deleted.',
+                details: { finalDeletion: true }
+            }, { transaction });
+            // Hard delete the letter and related records
+            await letter_action_log_model_1.LetterActionLog.destroy({ where: { letterId: id }, transaction });
+            await letter_reviewer_model_1.LetterReviewer.destroy({ where: { letterId: id }, transaction });
+            await letter_model_1.Letter.destroy({ where: { id, userId }, force: true, transaction });
+            await transaction.commit();
+            return true;
+        }
+        catch (error) {
+            if (transaction)
+                await transaction.rollback();
+            console.error(`Error permanently deleting letter with ID ${id} for user ${userId}:`, error);
+            if (error instanceof errorHandler_1.AppError)
+                throw error;
+            throw new errorHandler_1.AppError(500, 'Could not permanently delete letter.');
         }
     }
 }
