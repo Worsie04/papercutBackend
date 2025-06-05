@@ -234,7 +234,8 @@ export class LetterController {
           if (!newUserId || typeof newUserId !== 'string') { return next(new AppError(400, 'New User ID is required for reassignment.')); }
           if (reason && typeof reason !== 'string') { return next(new AppError(400, 'Invalid reason format.')); }
 
-          res.status(501).json({ message: 'Reassign service method not yet implemented.' });
+          const updatedLetter = await LetterService.reassignStep(letterId, currentUserId, newUserId, reason);
+          res.status(200).json({ message: 'Letter reassigned successfully.', letter: updatedLetter });
 
       } catch (error) {
           next(error);

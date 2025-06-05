@@ -1907,6 +1907,16 @@ static async finalApproveLetterSingle(letterId: string, userId: string, placemen
               transaction
           });
 
+          // Fetch letter with all associations before committing transaction
+          const letterForReturn = await Letter.findByPk(letterId, {
+              include: [
+                  { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                  { model: LetterReviewer, as: 'letterReviewers', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['sequenceOrder', 'ASC']]},
+                  { model: LetterActionLog, as: 'letterActionLogs', include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
+              ],
+              transaction
+          });
+
           await transaction.commit();
 
           try {
@@ -1927,10 +1937,23 @@ static async finalApproveLetterSingle(letterId: string, userId: string, placemen
               console.error(`Error sending reassignment notification for letter ${letterId}:`, notificationError);
           }
 
-          return await this.findById(letterId, currentUserId);
+          if (!letterForReturn) {
+              throw new AppError(500, `Failed to refetch letter ${letterId} after reassignment.`);
+          }
+
+          return letterForReturn;
 
       } catch (error) {
-          if (transaction) await transaction.rollback();
+          if (transaction) {
+              try { 
+                  await transaction.rollback(); 
+              } catch (rbError: any) {
+                  // Ignore rollback errors if transaction was already committed/finished
+                  if (!String(rbError.message).includes('commit') && !String(rbError.message).includes('rollback')) {
+                      console.error(`Error attempting to rollback transaction for letter ${letterId}:`, rbError);
+                  }
+              }
+          }
           console.error(`Error reassigning step for letter ${letterId}:`, error);
           if (error instanceof AppError) throw error;
           throw new AppError(500, 'Failed to reassign review step.');
