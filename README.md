@@ -51,3 +51,4 @@ See `.env.example` for all required environment variables.
 ## API Documentation
 
 API endpoints documentation will be available at `/api/docs` when running the server. # papercutBackend
+# papercutBackend
