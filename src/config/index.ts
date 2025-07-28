@@ -10,7 +10,7 @@ if (!jwtSecret && process.env.NODE_ENV === 'production') {
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '4000', 10),//4000 idi
+  port: parseInt(process.env.PORT || '80', 10),//4000 idi
   
   // Database
   database: {
