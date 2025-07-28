@@ -14,6 +14,12 @@ export const sequelize = new Sequelize({
     timestamps: true,
     underscored: true,
   },
+  dialectOptions: process.env.DB_SSL === 'true' ? {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false
+    }
+  } : {},
   pool: {
     max: 5,
     min: 0,

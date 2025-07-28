@@ -1727,6 +1727,15 @@ class LetterService {
                 details: comment,
                 transaction
             });
+            // Fetch letter with all associations before committing transaction
+            const letterForReturn = await letter_model_1.Letter.findByPk(letterId, {
+                include: [
+                    { model: user_model_1.User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                    { model: letter_reviewer_model_1.LetterReviewer, as: 'letterReviewers', include: [{ model: user_model_1.User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['sequenceOrder', 'ASC']] },
+                    { model: letter_action_log_model_1.LetterActionLog, as: 'letterActionLogs', include: [{ model: user_model_1.User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'avatar'] }], order: [['createdAt', 'DESC']] }
+                ],
+                transaction
+            });
             await transaction.commit();
             try {
                 const submitter = await user_model_1.User.findByPk(letter.userId, { attributes: ['id', 'email', 'firstName', 'lastName'] });
@@ -1745,11 +1754,23 @@ class LetterService {
             catch (notificationError) {
                 console.error(`Error sending reassignment notification for letter ${letterId}:`, notificationError);
             }
-            return await this.findById(letterId, currentUserId);
+            if (!letterForReturn) {
+                throw new errorHandler_1.AppError(500, `Failed to refetch letter ${letterId} after reassignment.`);
+            }
+            return letterForReturn;
         }
         catch (error) {
-            if (transaction)
-                await transaction.rollback();
+            if (transaction) {
+                try {
+                    await transaction.rollback();
+                }
+                catch (rbError) {
+                    // Ignore rollback errors if transaction was already committed/finished
+                    if (!String(rbError.message).includes('commit') && !String(rbError.message).includes('rollback')) {
+                        console.error(`Error attempting to rollback transaction for letter ${letterId}:`, rbError);
+                    }
+                }
+            }
             console.error(`Error reassigning step for letter ${letterId}:`, error);
             if (error instanceof errorHandler_1.AppError)
                 throw error;
