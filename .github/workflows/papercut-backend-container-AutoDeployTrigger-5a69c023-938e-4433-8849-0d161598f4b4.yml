@@ -1,24 +1,20 @@
 name: Trigger auto deployment for papercut-backend-container
-# When this action will be executed
+
 on:
-  # Automatically trigger it when detected changes in repo
   push:
-    branches: 
-      [ main ]
-    paths:
-    - '**'
-    - '.github/workflows/papercut-backend-container-AutoDeployTrigger-5a69c023-938e-4433-8849-0d161598f4b4.yml'
-  # Allow manual trigger 
-  workflow_dispatch:      
+    branches: [ main ]
+  workflow_dispatch:
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions: 
-      id-token: write #This is required for requesting the OIDC JWT Token
-      contents: read #Required when GH token is used to authenticate with private repo
+      id-token: write
+      contents: read
+    
     steps:
-      - name: Checkout to the branch
-        uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
         
       - name: Azure Login
         uses: azure/login@v2
@@ -28,20 +24,19 @@ jobs:
           subscription-id: ${{ secrets.PAPERCUTBACKENDCONTAINER_AZURE_SUBSCRIPTION_ID }}
           
       - name: Login to Azure Container Registry
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          echo ${{ secrets.REGISTRY_PASSWORD }} | docker login ${{ secrets.AZURE_CONTAINER_REGISTRY }} -u ${{ secrets.REGISTRY_USERNAME }} --password-stdin
           
       - name: Build and push Docker image
         run: |
           docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }} .
+          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:latest .
           docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }}
+          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:latest
           
       - name: Deploy to Container App
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          containerAppName: papercut-backend-container
-          resourceGroup: papercut-backend-container-reg-group
-          imageToDeploy: ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }}
+        run: |
+          az containerapp update \
+            --name papercut-backend-container \
+            --resource-group papercut-backend-container-reg-group \
+            --image ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }}
