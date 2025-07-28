@@ -30,15 +30,14 @@ jobs:
         uses: azure/container-apps-deploy-action@v2
         with:
           appSourcePath: ${{ github.workspace }}
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
           registryUrl: papecutregisteryname.azurecr.io
           registryUsername: ${{ secrets.PAPERCUTBACKENDCONTAINER_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.PAPERCUTBACKENDCONTAINER_REGISTRY_PASSWORD }}
           containerAppName: papercut-backend-container
           resourceGroup: papercut-backend-container-reg-group
           imageToBuild: papecutregisteryname.azurecr.io/papercut-backend-container:${{ github.sha }}
-          
+          targetPort: 80
+          ingress: external
             
 
      
