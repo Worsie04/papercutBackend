@@ -19,20 +19,29 @@ jobs:
     steps:
       - name: Checkout to the branch
         uses: actions/checkout@v2
+        
       - name: Azure Login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.PAPERCUTBACKENDCONTAINER_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.PAPERCUTBACKENDCONTAINER_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.PAPERCUTBACKENDCONTAINER_AZURE_SUBSCRIPTION_ID }}
-      - name: Build and push container image to registry
+          
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+          
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }} .
+          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }}
+          
+      - name: Deploy to Container App
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ${{ github.workspace }}
-          dockerfilePath: Dockerfile
-          registryUrl: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-          registryUsername: ${{ secrets.REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.REGISTRY_PASSWORD }}
           containerAppName: papercut-backend-container
           resourceGroup: papercut-backend-container-reg-group
-          imageToBuild: ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }}
+          imageToDeploy: ${{ secrets.AZURE_CONTAINER_REGISTRY }}/papercut-backend-container:${{ github.sha }}
