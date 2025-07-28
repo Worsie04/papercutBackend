@@ -83,7 +83,7 @@ RUN mkdir -p /app/uploads /app/logs /app/temp
 RUN chmod -R 777 /app/uploads /app/logs /app/temp
 
 # Server portunu ifşa edirik
-EXPOSE 4000
+EXPOSE 80
 
 # Volume təyin edirik
 VOLUME ["/app/uploads", "/app/logs"]
